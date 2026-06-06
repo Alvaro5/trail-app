@@ -1,9 +1,17 @@
+import { useState } from "react";
 import "./App.css";
 
 type TrackPoint = {
   lat: number;
   lon: number;
   ele: number;
+};
+
+type Summary = {
+  points: number;
+  distanceKm: number;
+  gainM: number;
+  timeSec: number;
 };
 
 function parseGpx(xml: string): TrackPoint[] {
@@ -99,10 +107,7 @@ function projectTime(grades: number[], dists: number[]): number {
   let totalSec = 0;
   for (let i = 1; i < dists.length; i++) {
     const segKm = (dists[i] - dists[i - 1]) / 1000;
-    // TODO (you): add this segment's time to totalSec —
-    //   segKm * FLAT_PACE_S_PER_KM * ratio(grades[i - 1])
     totalSec += segKm * FLAT_PACE_S_PER_KM * ratio(grades[i - 1]);
-    void segKm; // remove once you use segKm above
   }
   return totalSec;
 }
@@ -111,6 +116,8 @@ const fmt = (s: number) =>
   `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`;
 
 function GpxUpload() {
+  const [summary, setSummary] = useState<Summary | null>(null);
+
   function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -119,29 +126,34 @@ function GpxUpload() {
       .then((text) => {
         const points = parseGpx(text);
         const distances = cumulativeDistances(points);
-        const totalKm = distances[distances.length - 1] / 1000;
-        const smoothed = smoothElevation(points, 5);
+        const smoothed = smoothElevation(points, 3);
         const grades = gradients(smoothed, distances);
-        const raw = elevationChange(points);
-        const smoothEC = elevationChange(smoothed);
-        const minGrade = Math.min(...grades);
-        const maxGrade = Math.max(...grades);
 
-        console.log(`Parsed ${points.length} points`, points[0]);
-        console.log(`Total distance: ${totalKm.toFixed(2)} km`);
-        console.log(
-          `D+ raw ${raw.gain.toFixed(0)} m  ->  smoothed ${smoothEC.gain.toFixed(0)} m`,
-        );
-        console.log(
-          `Grade range: ${(minGrade * 100).toFixed(0)}% to ${(maxGrade * 100).toFixed(0)}%`,
-        );
-        console.log(
-          `Projected time @6:00/km flat: ${fmt(projectTime(grades, distances))}`,
-        );
+        setSummary({
+          points: points.length,
+          distanceKm: distances[distances.length - 1] / 1000,
+          gainM: elevationChange(smoothed).gain,
+          timeSec: projectTime(grades, distances),
+        });
       })
       .catch((err) => console.error(err));
   }
-  return <input type="file" accept=".gpx" onChange={handleFile} />;
+
+  return (
+    <>
+      <input type="file" accept=".gpx" onChange={handleFile} />
+      {summary && (
+        <dl>
+          <dt>Distance</dt>
+          <dd>{summary.distanceKm.toFixed(2)} km</dd>
+          <dt>Elevation gain (D+)</dt>
+          <dd>{summary.gainM.toFixed(0)} m</dd>
+          <dt>Projected time @6:00/km</dt>
+          <dd>{fmt(summary.timeSec)}</dd>
+        </dl>
+      )}
+    </>
+  );
 }
 
 function App() {
