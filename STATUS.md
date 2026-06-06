@@ -25,10 +25,5 @@
   clamp grade for display. Future item, not blocking.
 - Model assumes running every gradient at iso-effort; power-hike transition is the next build.
 
-## Cleanup (non-blocking)
-- Extract pure functions to `src/lib/pacing.ts`; unit-test the 7 Minetti anchor values so a coefficient typo fails loudly.
-- Delete the top-level Minetti `for` console loop before shipping (runs on every import).
-- Rename `smoothElevation`'s `window` param to `windowSize` (shadows global `window`).
-
 ## Open decisions
 - PWA later; native/watch only if validated
