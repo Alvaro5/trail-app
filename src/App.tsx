@@ -8,6 +8,9 @@ type TrackPoint = {
 
 function parseGpx(xml: string): TrackPoint[] {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.querySelector("parsererror")) {
+    throw new Error("Not a valid GPX/XML file");
+  }
   const trkpts = doc.querySelectorAll("trkpt");
   return Array.from(trkpts).map((pt) => ({
     lat: Number(pt.getAttribute("lat")),
@@ -20,10 +23,13 @@ function GpxUpload() {
   function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    file.text().then((text) => {
-      const points = parseGpx(text);
-      console.log(`Parsed ${points.length} points`, points[0]);
-    });
+    file
+      .text()
+      .then((text) => {
+        const points = parseGpx(text);
+        console.log(`Parsed ${points.length} points`, points[0]);
+      })
+      .catch((err) => console.error(err));
   }
   return <input type="file" accept=".gpx" onChange={handleFile} />;
 }
