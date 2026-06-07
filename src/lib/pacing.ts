@@ -12,11 +12,20 @@ export function parseGpx(xml: string): TrackPoint[] {
     throw new Error("Not a valid GPX/XML file");
   }
   const trkpts = doc.querySelectorAll("trkpt");
-  return Array.from(trkpts).map((pt) => ({
+  const points = Array.from(trkpts).map((pt) => ({
     lat: Number(pt.getAttribute("lat")),
     lon: Number(pt.getAttribute("lon")),
     ele: Number(pt.querySelector("ele")?.textContent),
   }));
+
+  // Forward-fill missing elevations (absent <ele> → NaN) so one gap can't
+  // poison gradient → cost → time downstream.
+  let lastEle = 0;
+  for (const p of points) {
+    if (Number.isNaN(p.ele)) p.ele = lastEle;
+    else lastEle = p.ele;
+  }
+  return points;
 }
 
 export function haversine(a: TrackPoint, b: TrackPoint): number {
@@ -96,24 +105,32 @@ export function minettiCost(i: number): number {
 
 const ratio = (i: number) => minettiCost(i) / minettiCost(0);
 
-export function projectTime(
-  grades: number[],
-  dists: number[],
+// Time for one segment. Below the transition grade you run. Above it,
+// iso-effort running is a fantasy (you can't hold that power up a wall),
+// so you power-hike at a fixed vertical rate (VAM) — slower, but real.
+function segmentTimeSec(
+  grade: number,
+  meters: number,
   flatPaceSecPerKm: number,
-): number {
-  let totalSec = 0;
-  for (let i = 1; i < dists.length; i++) {
-    const segKm = (dists[i] - dists[i - 1]) / 1000;
-    // grades[i-1] is the slope of the segment ending at point i
-    totalSec += segKm * flatPaceSecPerKm * ratio(grades[i - 1]);
+  hikeVamMperH: number,
+  transitionGrade: number,
+): { sec: number; hiked: boolean } {
+  if (grade < transitionGrade) {
+    const runSec = (meters / 1000) * flatPaceSecPerKm * ratio(grade);
+    return { sec: runSec, hiked: false };
   }
-  return totalSec;
+  // VAM is a vertical rate, so hike time = vertical gain / VAM; horizontal cancels.
+  const vamMs = hikeVamMperH / 3600; // vertical m/s
+  const rise = grade * meters; // vertical meters climbed in this segment
+  return { sec: rise / vamMs, hiked: true };
 }
 
 export type Split = {
   km: number; // 1, 2, 3, ... (the final entry may be a partial km)
   distanceKm: number; // actual length — ~1, last is partial
   grade: number; // net grade across the km (rise / run)
+  gainM: number; // D+ climbed within the km (positive rises only)
+  hikeFraction: number; // 0–1: share of the km spent power-hiking
   paceSecPerKm: number;
   elapsedSec: number; // cumulative time at the end of this km
 };
@@ -122,10 +139,14 @@ export function computeSplits(
   dists: number[],
   grades: number[],
   flatPaceSecPerKm: number,
+  hikeVamMperH: number,
+  transitionGrade: number,
 ): Split[] {
   const splits: Split[] = [];
   let kmMeters = 0;
   let kmRise = 0;
+  let kmGain = 0;
+  let kmHikeMeters = 0;
   let kmTimeSec = 0;
   let elapsedSec = 0;
   let kmIndex = 1;
@@ -135,24 +156,37 @@ export function computeSplits(
       km: kmIndex,
       distanceKm: kmMeters / 1000,
       grade: kmRise / kmMeters, // distance-weighted average = net rise / run
+      gainM: kmGain,
+      hikeFraction: kmHikeMeters / kmMeters,
       paceSecPerKm: kmTimeSec / (kmMeters / 1000),
       elapsedSec,
     });
     kmIndex++;
     kmMeters = 0;
     kmRise = 0;
+    kmGain = 0;
+    kmHikeMeters = 0;
     kmTimeSec = 0;
   };
 
   for (let i = 1; i < dists.length; i++) {
     const segMeters = dists[i] - dists[i - 1];
     const grade = grades[i - 1];
-    const segTimeSec = (segMeters / 1000) * flatPaceSecPerKm * ratio(grade);
+    const rise = grade * segMeters; // signed: + climbing, − descending
+    const { sec, hiked } = segmentTimeSec(
+      grade,
+      segMeters,
+      flatPaceSecPerKm,
+      hikeVamMperH,
+      transitionGrade,
+    );
 
     kmMeters += segMeters;
-    kmRise += grade * segMeters; // grade * run = rise; summed = net rise for the km
-    kmTimeSec += segTimeSec;
-    elapsedSec += segTimeSec;
+    kmRise += rise; // net (signed) rise for the km
+    if (rise > 0) kmGain += rise; // D+ counts only the climbs
+    if (hiked) kmHikeMeters += segMeters;
+    kmTimeSec += sec;
+    elapsedSec += sec;
 
     if (kmMeters >= 1000) flush(); // close the bucket once we've banked a km
   }

@@ -18,6 +18,8 @@ type Plan = {
 };
 
 const FLAT_PACE_S_PER_KM = 360; // 6:00/km — the effort input (a UI field later)
+const HIKE_VAM_M_PER_H = 750; // power-hike vertical ascent rate (a UI field later)
+const HIKE_TRANSITION_GRADE = 0.18; // above this grade, switch to power-hiking
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -46,7 +48,13 @@ function GpxUpload() {
         const distances = cumulativeDistances(points);
         const smoothed = smoothElevation(points, 3);
         const grades = gradients(smoothed, distances);
-        const splits = computeSplits(distances, grades, FLAT_PACE_S_PER_KM);
+        const splits = computeSplits(
+          distances,
+          grades,
+          FLAT_PACE_S_PER_KM,
+          HIKE_VAM_M_PER_H,
+          HIKE_TRANSITION_GRADE,
+        );
 
         setPlan({
           distanceKm: distances[distances.length - 1] / 1000,
@@ -76,6 +84,8 @@ function GpxUpload() {
               <tr>
                 <th>km</th>
                 <th>grade</th>
+                <th>D+</th>
+                <th>hike</th>
                 <th>pace</th>
                 <th>elapsed</th>
               </tr>
@@ -83,8 +93,13 @@ function GpxUpload() {
             <tbody>
               {plan.splits.map((s) => (
                 <tr key={s.km}>
-                  <td>{s.km}</td>
+                  <td>
+                    {s.km}
+                    {s.distanceKm < 0.95 ? ` (${s.distanceKm.toFixed(2)} km)` : ""}
+                  </td>
                   <td>{fmtGrade(s.grade)}</td>
+                  <td>{s.gainM.toFixed(0)} m</td>
+                  <td>{s.hikeFraction > 0 ? `${(s.hikeFraction * 100).toFixed(0)}%` : "—"}</td>
                   <td>{fmtPace(s.paceSecPerKm)}/km</td>
                   <td>{fmtClock(s.elapsedSec)}</td>
                 </tr>
