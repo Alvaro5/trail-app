@@ -1,5 +1,15 @@
+// @vitest-environment happy-dom
+// parseGpx needs a DOMParser; happy-dom supplies one for this file only. The
+// pure-math tests below don't care which environment they run in.
 import { describe, it, expect } from "vitest";
-import { minettiCost, computeSplits } from "./pacing";
+import {
+  minettiCost,
+  computeSplits,
+  parseGpx,
+  actualSegmentTimes,
+  gradients,
+  cumulativeDistances,
+} from "./pacing";
 
 describe("minettiCost", () => {
   // The seven anchor values verified against Minetti et al. (2002).
@@ -101,5 +111,67 @@ describe("computeSplits", () => {
       0,
     );
     expect(total).toBeCloseTo(splits[splits.length - 1].elapsedSec, 6);
+  });
+});
+
+// Build a minimal GPX from [lat, lon, ele, isoTime?] rows. Omitting the time
+// column produces a <trkpt> with no <time> child — i.e. a course-planning file.
+function gpx(rows: [number, number, number, string?][]): string {
+  const pts = rows
+    .map(
+      ([lat, lon, ele, t]) =>
+        `<trkpt lat="${lat}" lon="${lon}"><ele>${ele}</ele>` +
+        (t ? `<time>${t}</time>` : "") +
+        `</trkpt>`,
+    )
+    .join("");
+  return `<gpx><trk><trkseg>${pts}</trkseg></trk></gpx>`;
+}
+
+describe("timestamp capture (self-calibration input)", () => {
+  it("parses <time> and derives correct, positive segment times", () => {
+    // 30 s then 80 s between fixes.
+    const points = parseGpx(
+      gpx([
+        [48.4, 2.6, 100, "2025-09-13T07:00:00Z"],
+        [48.401, 2.6, 110, "2025-09-13T07:00:30Z"],
+        [48.402, 2.6, 105, "2025-09-13T07:01:50Z"],
+      ]),
+    );
+    expect(points.every((p) => typeof p.time === "number")).toBe(true);
+
+    const times = actualSegmentTimes(points);
+    expect(times).toEqual([30, 80]);
+    // parallel to gradients (length n−1) and strictly positive
+    expect(times).toHaveLength(points.length - 1);
+    expect(times!.every((t) => t > 0)).toBe(true);
+  });
+
+  it("parses a course GPX with no <time> and runs the forward model unchanged", () => {
+    const points = parseGpx(
+      gpx([
+        [48.4, 2.6, 100],
+        [48.401, 2.6, 110],
+        [48.402, 2.6, 105],
+      ]),
+    );
+    // No timestamps captured…
+    expect(points.every((p) => p.time === undefined)).toBe(true);
+    // …so there is no usable timing signal — null, not a faked/partial array.
+    expect(actualSegmentTimes(points)).toBeNull();
+    // …yet the geometry pipeline still works exactly as before.
+    const dists = cumulativeDistances(points);
+    expect(gradients(points, dists)).toHaveLength(points.length - 1);
+  });
+
+  it("returns null when only some points carry a timestamp", () => {
+    const points = parseGpx(
+      gpx([
+        [48.4, 2.6, 100, "2025-09-13T07:00:00Z"],
+        [48.401, 2.6, 110], // missing <time>
+        [48.402, 2.6, 105, "2025-09-13T07:01:50Z"],
+      ]),
+    );
+    expect(actualSegmentTimes(points)).toBeNull();
   });
 });

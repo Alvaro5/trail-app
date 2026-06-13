@@ -33,8 +33,25 @@
   end-to-end on a point-to-point course, not just the 25 Bosses loop.
 - Docs: CLAUDE.md added (decisions, working style, do-not-list); README rewritten
   to current behavior; removed leftover Vite DEFAULT_README.
+- **Self-calibration groundwork — timestamp capture.** `TrackPoint` gained an
+  optional `time?` (epoch ms); `parseGpx` now reads the `<time>` child of each
+  `<trkpt>` (ISO 8601 → epoch ms) when present, undefined when absent — course
+  GPX files with no timestamps parse and run the forward model exactly as before.
+  New pure fn `actualSegmentTimes(points)` returns per-segment elapsed seconds
+  (parallel to gradients, length n−1), or **null if any point lacks a timestamp**
+  (all-or-nothing: a partially-timed track can't anchor a fit and zero-filling
+  would bias solved params fast). Tests added under a `happy-dom` env docblock
+  (new dev-only dep, supplies DOMParser): timestamped track → correct positive
+  segment times; no-time course → null + forward pipeline intact; partial timing
+  → null. `actualSegmentTimes` is the ground-truth input the calibration fit will
+  consume next.
 
 ## Next
+- **Self-calibration fit (engine).** Given a recorded effort, run the forward
+  model on that course and SOLVE for the terrain/efficiency factor that makes our
+  prediction match `actualSegmentTimes`. Inputs now exist (timestamp capture done
+  above); next is the fit itself — still pure engine, no UI yet. Keep terrain and
+  fatigue separable: one calibration point can't identify both (see CLAUDE.md).
 - Calibration: decide a believable terrain factor for Fontainebleau using the
   68.75 km finish as a gut-check (7:17 @1.00 vs 8:44 @1.20 — which matches reality?)
 - Fatigue-fade model — ONLY after a second calibration point exists (known split

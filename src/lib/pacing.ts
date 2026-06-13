@@ -4,6 +4,7 @@ export type TrackPoint = {
   lat: number;
   lon: number;
   ele: number;
+  time?: number; // epoch ms; present only when the GPX carries <time> (a recorded effort)
 };
 
 export function parseGpx(xml: string): TrackPoint[] {
@@ -12,11 +13,19 @@ export function parseGpx(xml: string): TrackPoint[] {
     throw new Error("Not a valid GPX/XML file");
   }
   const trkpts = doc.querySelectorAll("trkpt");
-  const points = Array.from(trkpts).map((pt) => ({
-    lat: Number(pt.getAttribute("lat")),
-    lon: Number(pt.getAttribute("lon")),
-    ele: Number(pt.querySelector("ele")?.textContent),
-  }));
+  const points = Array.from(trkpts).map((pt) => {
+    // <time> is ISO 8601 (e.g. 2025-09-13T07:00:00Z). Date.parse → epoch ms,
+    // or NaN if absent/malformed. Course-planning GPX files have no timestamps,
+    // so we leave `time` undefined there and the forward model never sees it.
+    const timeText = pt.querySelector("time")?.textContent;
+    const t = timeText ? Date.parse(timeText) : NaN;
+    return {
+      lat: Number(pt.getAttribute("lat")),
+      lon: Number(pt.getAttribute("lon")),
+      ele: Number(pt.querySelector("ele")?.textContent),
+      ...(Number.isNaN(t) ? {} : { time: t }),
+    };
+  });
 
   // Forward-fill missing elevations (absent <ele> → NaN) so one gap can't
   // poison gradient → cost → time downstream.
@@ -88,6 +97,28 @@ export function gradients(points: TrackPoint[], dists: number[]): number[] {
     grades.push(dDist === 0 ? 0 : dEle / dDist); // zero-length segment = flat
   }
   return grades;
+}
+
+// Elapsed seconds for each segment of a *recorded* effort — the ground truth the
+// self-calibration fit will compare our forward prediction against. Parallel to
+// the gradients array (length n−1).
+//
+// All-or-nothing on timestamps: if any point lacks <time> we return null rather
+// than stitch real and invented deltas together. A half-timed track can't anchor
+// a fit, and silently zero-filling the gaps would bias the solved parameters
+// toward "faster than reality" — worse than admitting we have no usable signal.
+//
+// Deferred (raw deltas are fine this session): timestamps include stopped time —
+// aid-station stops, photo breaks, a paused watch. Those inflate segment times
+// without reflecting terrain difficulty, so the calibration layer will later need
+// a moving-time filter (e.g. drop near-zero-speed segments). Noted, not solved now.
+export function actualSegmentTimes(points: TrackPoint[]): number[] | null {
+  if (points.some((p) => p.time === undefined)) return null;
+  const times: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    times.push((points[i].time! - points[i - 1].time!) / 1000);
+  }
+  return times;
 }
 
 export function minettiCost(i: number): number {
