@@ -72,4 +72,34 @@ describe("computeSplits", () => {
     expect(rough[0].grade).toBe(base[0].grade); // terrain doesn't touch grade
     expect(rough[0].hikeFraction).toBe(base[0].hikeFraction);
   });
+
+  // Total-time invariant — replaces the cross-check lost when projectTime was
+  // deleted. Each split's own time is paceSecPerKm × distanceKm; the splits must
+  // reconcile with the cumulative elapsedSec, so the per-km numbers shown in the
+  // table can never silently drift from the projected finish.
+  it("reconciles per-km times with the cumulative elapsed (total-time invariant)", () => {
+    // A mixed course in 250 m segments: flat, gentle climb, descent, and a
+    // wall above the gate (power-hike). Spans >3 km so multiple buckets flush.
+    const grades = [
+      0, 0.05, 0.1, -0.08, 0, 0.25, 0.3, -0.15, 0.12, 0, 0.07, -0.2, 0.18, 0.0,
+    ];
+    const dists = [0];
+    for (let i = 0; i < grades.length; i++) dists.push(dists[i] + 250);
+
+    const splits = computeSplits(dists, grades, FLAT, VAM, GATE, 1.1);
+
+    // Each split's elapsed equals the running sum of per-km times before it.
+    let running = 0;
+    for (const s of splits) {
+      running += s.paceSecPerKm * s.distanceKm;
+      expect(s.elapsedSec).toBeCloseTo(running, 6);
+    }
+
+    // And the whole table sums to the final projected finish.
+    const total = splits.reduce(
+      (sum, s) => sum + s.paceSecPerKm * s.distanceKm,
+      0,
+    );
+    expect(total).toBeCloseTo(splits[splits.length - 1].elapsedSec, 6);
+  });
 });

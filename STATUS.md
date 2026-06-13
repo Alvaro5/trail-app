@@ -16,6 +16,10 @@
 - Minetti grade-adjusted cost model, clamped to ±0.45 — verified against the 2002 paper
 - Engine extracted to `src/lib/pacing.ts` (pure, no React); Minetti anchors + clamp +
   computeSplits behavior locked in Vitest (`npm test`)
+- Total-time invariant test: Σ (paceSecPerKm × distanceKm) over splits === last
+  split's elapsedSec, asserted per-km on a mixed run/descent/hike course. Replaces
+  the cross-check lost when projectTime was deleted; locks the table columns to the
+  projected finish so they can't silently drift apart
 - Per-segment pace from cost ratio → projected finish time on screen
 - Per-km splits table (km / grade / D+ / hike% / pace / elapsed)
 - Run/hike transition: HARD SWITCH to power-hike above transition grade at VAM
@@ -31,8 +35,6 @@
   to current behavior; removed leftover Vite DEFAULT_README.
 
 ## Next
-- Total-time invariant test: assert Σ segment times === last split's elapsedSec
-  (replaces the cross-check lost when projectTime was deleted)
 - Calibration: decide a believable terrain factor for Fontainebleau using the
   68.75 km finish as a gut-check (7:17 @1.00 vs 8:44 @1.20 — which matches reality?)
 - Fatigue-fade model — ONLY after a second calibration point exists (known split
