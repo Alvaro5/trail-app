@@ -45,13 +45,32 @@
   segment times; no-time course → null + forward pipeline intact; partial timing
   → null. `actualSegmentTimes` is the ground-truth input the calibration fit will
   consume next.
+- **Self-calibration fit v0 — one scalar.** `calibrateTerrainFactor(points, dists,
+  grades, flatPace, vam, gate)` inverts the forward model against a recorded
+  effort: runs pure Minetti (terrainFactor 1.0), then returns `actualTotal /
+  predictedTotal`. Single division is *exact*, not approximate — terrainFactor
+  scales every segment time uniformly, so predicted total is linear in it. This
+  replaces the slider the user currently guesses with a measured number. Same
+  all-or-nothing timing discipline: null if `actualSegmentTimes` is null (also
+  null on a degenerate zero-movement course). Pure engine only — NOT wired into
+  App.tsx; that's a later step. Test recovers ~1.15 from a track timed at exactly
+  1.15× the model across mixed grades; no-time effort → null.
+  - Honest limitations (recorded, not solved this session):
+    1. **Stopped time** — aid-station / paused-watch / photo deltas inflate
+       `actualTotal`, biasing the factor high. A moving-time filter belongs in
+       `actualSegmentTimes` (drop near-zero-speed segments) before this division.
+    2. **Single-effort overfit** — one race = one day's weather/legs/fueling. The
+       real version should fit against several efforts, weighting recent ones more,
+       not trust a lone finish time.
 
 ## Next
-- **Self-calibration fit (engine).** Given a recorded effort, run the forward
-  model on that course and SOLVE for the terrain/efficiency factor that makes our
-  prediction match `actualSegmentTimes`. Inputs now exist (timestamp capture done
-  above); next is the fit itself — still pure engine, no UI yet. Keep terrain and
-  fatigue separable: one calibration point can't identify both (see CLAUDE.md).
+- **Wire calibration into the UI.** `calibrateTerrainFactor` exists as a pure fn
+  but nothing calls it. Next: let the user upload a past *timed* effort, run the
+  fit, and feed the measured factor into the forward model (replacing the guessed
+  slider). Decide UX for cold-start (no history) vs calibrated.
+- **Moving-time filter** in `actualSegmentTimes` before the fit trusts totals
+  (limitation 1 above) — drop near-zero-speed segments so aid stops don't inflate
+  the factor.
 - Calibration: decide a believable terrain factor for Fontainebleau using the
   68.75 km finish as a gut-check (7:17 @1.00 vs 8:44 @1.20 — which matches reality?)
 - Fatigue-fade model — ONLY after a second calibration point exists (known split

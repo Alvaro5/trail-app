@@ -7,8 +7,10 @@ import {
   computeSplits,
   parseGpx,
   actualSegmentTimes,
+  calibrateTerrainFactor,
   gradients,
   cumulativeDistances,
+  type TrackPoint,
 } from "./pacing";
 
 describe("minettiCost", () => {
@@ -173,5 +175,49 @@ describe("timestamp capture (self-calibration input)", () => {
       ]),
     );
     expect(actualSegmentTimes(points)).toBeNull();
+  });
+});
+
+describe("calibrateTerrainFactor", () => {
+  const FLAT = 360;
+  const VAM = 750;
+  const GATE = 0.18;
+
+  it("recovers the factor from a track timed at a known multiple of the model", () => {
+    // 1000 m segments so each is its own km bucket → split[i] time IS segment i's
+    // model time. Mixed grades (flat, climb, descent) to prove it's grade-agnostic.
+    const grades = [0, 0.1, -0.1, 0.15];
+    const dists = [0];
+    for (let i = 0; i < grades.length; i++) dists.push(dists[i] + 1000);
+
+    // Per-segment model seconds at terrainFactor = 1.0 (distanceKm === 1 here).
+    const splits = computeSplits(dists, grades, FLAT, VAM, GATE, 1);
+    const segModelSec = splits.map((s) => s.paceSecPerKm * s.distanceKm);
+
+    // Build a recorded effort that took EXACTLY 1.15× the model, segment by segment.
+    const TRUTH = 1.15;
+    const points: TrackPoint[] = [{ lat: 0, lon: 0, ele: 0, time: 0 }];
+    let cumMs = 0;
+    for (const sec of segModelSec) {
+      cumMs += sec * TRUTH * 1000;
+      points.push({ lat: 0, lon: 0, ele: 0, time: cumMs });
+    }
+
+    const factor = calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE);
+    expect(factor).not.toBeNull();
+    expect(factor!).toBeCloseTo(TRUTH, 6);
+  });
+
+  it("returns null when the effort has no usable timing", () => {
+    const grades = [0, 0.1];
+    const dists = [0, 1000, 2000];
+    const points: TrackPoint[] = [
+      { lat: 0, lon: 0, ele: 0 }, // no time
+      { lat: 0, lon: 0, ele: 0 },
+      { lat: 0, lon: 0, ele: 0 },
+    ];
+    expect(
+      calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE),
+    ).toBeNull();
   });
 });

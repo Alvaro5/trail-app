@@ -229,3 +229,45 @@ export function computeSplits(
 
   return splits;
 }
+
+// Self-calibration, simplest form: invert the forward model against a past
+// recorded effort to MEASURE the terrain factor instead of making the runner
+// guess it. We run pure Minetti (terrainFactor = 1.0) over the same course, then
+// scale to whatever the runner actually did.
+//
+// Why a single division is exact, not an approximation: terrainFactor multiplies
+// every segment's time uniformly (adjSec = sec × terrainFactor), so the predicted
+// total is strictly linear in it. The factor that makes predicted == actual is
+// therefore exactly actualTotal / predictedTotal — no search needed. This one
+// scalar absorbs everything the model can't see for THIS runner on THIS course
+// (surface, technicality, true fitness) into one measured number.
+//
+// All-or-nothing on timing, same discipline as actualSegmentTimes: a partially
+// timed track yields null rather than a fit anchored on invented deltas.
+export function calibrateTerrainFactor(
+  points: TrackPoint[],
+  dists: number[],
+  grades: number[],
+  flatPaceSecPerKm: number,
+  hikeVamMperH: number,
+  transitionGrade: number,
+): number | null {
+  const actual = actualSegmentTimes(points);
+  if (actual === null) return null;
+  const actualTotal = actual.reduce((sum, t) => sum + t, 0);
+
+  const predicted = computeSplits(
+    dists,
+    grades,
+    flatPaceSecPerKm,
+    hikeVamMperH,
+    transitionGrade,
+    1, // baseline: pure Minetti, no terrain fudge — that's what we're solving for
+  );
+  const predictedTotal = predicted.length
+    ? predicted[predicted.length - 1].elapsedSec
+    : 0;
+  if (predictedTotal === 0) return null; // degenerate course (no movement) — can't divide
+
+  return actualTotal / predictedTotal;
+}

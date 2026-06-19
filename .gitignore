@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 CLAUDE.md
+
+# Local GPX test efforts (personal recorded runs, not for the public repo)
+gpx_test/
