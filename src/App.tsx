@@ -377,7 +377,7 @@ function GpxUpload() {
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatCard
               label="Distance"
               value={`${track.distanceKm.toFixed(2)} km`}
@@ -389,7 +389,11 @@ function GpxUpload() {
             <StatCard label="Projected time" value={fmtClock(timeSec)} />
           </div>
 
-          <table className="w-full border-collapse text-sm">
+          {/* On a phone six columns can't fit; let the table keep a readable
+              min-width and scroll horizontally inside its own box so the page
+              layout never breaks. */}
+          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <table className="w-full min-w-[34rem] border-collapse text-sm">
             <thead>
               <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-400">
                 <th className="py-2 pr-4 text-left font-medium">km</th>
@@ -437,6 +441,7 @@ function GpxUpload() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </>
