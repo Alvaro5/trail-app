@@ -120,21 +120,25 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex w-44 flex-col gap-1 text-sm">
-      <span className="text-zinc-400">{label}</span>
+    <label className="flex w-56 flex-col gap-1 text-sm">
+      <span className="text-zinc-300">{label}</span>
       {children}
+      {hint && <span className="text-xs text-zinc-500">{hint}</span>}
     </label>
   );
 }
 
 function SliderField({
   label,
+  hint,
   value,
   display,
   min,
@@ -143,6 +147,7 @@ function SliderField({
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: number;
   display: string;
   min: number;
@@ -151,8 +156,8 @@ function SliderField({
   onChange: (n: number) => void;
 }) {
   return (
-    <label className="flex w-44 flex-col gap-1 text-sm">
-      <span className="flex justify-between text-zinc-400">
+    <label className="flex w-56 flex-col gap-1 text-sm">
+      <span className="flex justify-between text-zinc-300">
         <span>{label}</span>
         <span className="tabular-nums text-zinc-200">{display}</span>
       </span>
@@ -165,6 +170,7 @@ function SliderField({
         onChange={(e) => onChange(Number(e.target.value))}
         className="accent-emerald-500"
       />
+      {hint && <span className="text-xs text-zinc-500">{hint}</span>}
     </label>
   );
 }
@@ -264,44 +270,60 @@ function GpxUpload() {
         <div className="mt-8 space-y-6">
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Effort
+              Your pace
             </h2>
-            <div className="mt-3 flex flex-wrap gap-x-6 gap-y-4">
-              <Field label="Flat pace (min/km)">
+            <div className="mt-3">
+              <Field
+                label="Your easy flat-road pace"
+                hint="min/km — a pace you could hold for hours on flat ground. We adjust it for every hill on the course."
+              >
                 <input
                   value={paceText}
                   onChange={(e) => setPaceText(e.target.value)}
                   className={inputClass}
                 />
               </Field>
-              <SliderField
-                label="Hike VAM"
-                display={`${vam} m/h`}
-                value={vam}
-                min={300}
-                max={1200}
-                step={50}
-                onChange={setVam}
-              />
-              <SliderField
-                label="Hike above"
-                display={`${hikeAbovePct}%`}
-                value={hikeAbovePct}
-                min={5}
-                max={40}
-                step={1}
-                onChange={setHikeAbovePct}
-              />
-              <SliderField
-                label="Terrain factor"
-                display={`×${terrainFactor.toFixed(2)}`}
-                value={terrainFactor}
-                min={1}
-                max={1.5}
-                step={0.05}
-                onChange={setTerrainFactor}
-              />
             </div>
+
+            {/* Jargon controls tucked away — the default view needs none of them.
+                Native <details> keeps it collapsed on load with no extra state. */}
+            <details className="mt-4 border-t border-zinc-800 pt-3">
+              <summary className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-200">
+                Advanced settings
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-4">
+                <SliderField
+                  label="Uphill hiking speed"
+                  hint="how fast you climb when power-hiking, in vertical metres per hour"
+                  display={`${vam} m/h`}
+                  value={vam}
+                  min={300}
+                  max={1200}
+                  step={50}
+                  onChange={setVam}
+                />
+                <SliderField
+                  label="Switch to hiking when steeper than"
+                  hint="above this steepness, the plan walks instead of runs"
+                  display={`${hikeAbovePct}%`}
+                  value={hikeAbovePct}
+                  min={5}
+                  max={40}
+                  step={1}
+                  onChange={setHikeAbovePct}
+                />
+                <SliderField
+                  label="Terrain slowdown"
+                  hint="extra time for technical or rough ground (×1.00 = none)"
+                  display={`×${terrainFactor.toFixed(2)}`}
+                  value={terrainFactor}
+                  min={1}
+                  max={1.5}
+                  step={0.05}
+                  onChange={setTerrainFactor}
+                />
+              </div>
+            </details>
           </div>
 
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
