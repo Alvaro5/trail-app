@@ -45,6 +45,41 @@ type Track = {
   profile: { km: number; ele: number }[];
 };
 
+// Parse + geometry pipeline (see research notes / STATUS.md):
+//  1. resample to even spacing → no Δdist gradient spikes (geometry only; the
+//     timed raw points are untouched, used by the calibration path).
+//  2. smooth elevation over a fixed PHYSICAL window → grid-independent.
+//  3. D+ via hysteresis deadband → density-stable, noise-robust.
+// Throws GpxError on bad input; callers map that to a friendly message.
+function buildTrack(text: string): Track {
+  const points = parseGpx(text);
+  const resampled = resampleEven(
+    points,
+    cumulativeDistances(points),
+    RESAMPLE_INTERVAL_M,
+  );
+  const distances = resampled.dists;
+  const smoothed = smoothElevationByDistance(
+    resampled.points,
+    distances,
+    SMOOTH_WINDOW_M,
+  );
+  const grades = gradients(smoothed, distances);
+  return {
+    distances,
+    grades,
+    distanceKm: distances[distances.length - 1] / 1000,
+    gainM: cumulativeGain(
+      smoothed.map((p) => p.ele),
+      D_PLUS_THRESHOLD_M,
+    ),
+    profile: smoothed.map((p, i) => ({
+      km: distances[i] / 1000,
+      ele: p.ele,
+    })),
+  };
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 const fmtClock = (s: number) => {
@@ -142,56 +177,43 @@ function GpxUpload() {
   const [hikeAbovePct, setHikeAbovePct] = useState(18);
   const [terrainFactor, setTerrainFactor] = useState(1.0);
 
-  function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // Run any GPX text through the pipeline and reflect the result (or a friendly
+  // error) in state. Shared by file upload and the bundled example so both take
+  // the exact same path. `genericMsg` is the fallback for non-GpxError failures.
+  function loadGpx(textPromise: Promise<string>, genericMsg: string) {
     setError(null);
-    file
-      .text()
-      .then((text) => {
-        const points = parseGpx(text);
-        // Elevation pipeline (see research notes / STATUS.md):
-        //  1. resample to even spacing → no Δdist gradient spikes (geometry only;
-        //     the timed raw points are untouched, used by the calibration path).
-        //  2. smooth elevation over a fixed PHYSICAL window → grid-independent.
-        //  3. D+ via hysteresis deadband → density-stable, noise-robust.
-        const resampled = resampleEven(
-          points,
-          cumulativeDistances(points),
-          RESAMPLE_INTERVAL_M,
-        );
-        const distances = resampled.dists;
-        const smoothed = smoothElevationByDistance(
-          resampled.points,
-          distances,
-          SMOOTH_WINDOW_M,
-        );
-        const grades = gradients(smoothed, distances);
-        setTrack({
-          distances,
-          grades,
-          distanceKm: distances[distances.length - 1] / 1000,
-          gainM: cumulativeGain(
-            smoothed.map((p) => p.ele),
-            D_PLUS_THRESHOLD_M,
-          ),
-          profile: smoothed.map((p, i) => ({
-            km: distances[i] / 1000,
-            ele: p.ele,
-          })),
-        });
-      })
+    textPromise
+      .then((text) => setTrack(buildTrack(text)))
       .catch((err) => {
         // Map known parse failures to friendly inline copy; anything else gets a
         // generic message so the upload never crashes the page.
         setTrack(null);
         setError(
-          err instanceof GpxError
-            ? GPX_ERROR_MESSAGE[err.code]
-            : "Couldn't read this file. Please try a different GPX.",
+          err instanceof GpxError ? GPX_ERROR_MESSAGE[err.code] : genericMsg,
         );
         console.error(err);
       });
+  }
+
+  function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    loadGpx(file.text(), "Couldn't read this file. Please try a different GPX.");
+  }
+
+  // Lazily fetch the bundled course so it never weighs on first paint — only the
+  // visitor who clicks "Try an example" pays for it. BASE_URL keeps the path
+  // correct under any Vite base/deploy subpath.
+  function loadExample() {
+    loadGpx(
+      fetch(`${import.meta.env.BASE_URL}example-imperial-trail.gpx`).then(
+        (res) => {
+          if (!res.ok) throw new Error(`example fetch failed: ${res.status}`);
+          return res.text();
+        },
+      ),
+      "Couldn't load the example course. Please try again.",
+    );
   }
 
   // Derive the plan from the parsed track + the effort inputs, so editing a
@@ -210,12 +232,24 @@ function GpxUpload() {
 
   return (
     <>
-      <input
-        type="file"
-        accept=".gpx"
-        onChange={handleFile}
-        className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-emerald-500"
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="file"
+          accept=".gpx"
+          onChange={handleFile}
+          className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-emerald-500"
+        />
+        <button
+          type="button"
+          onClick={loadExample}
+          className="rounded-md border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-emerald-500 hover:text-white"
+        >
+          Try an example
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-zinc-500">
+        No GPX handy? Load the Imperial Trail (Fontainebleau) course.
+      </p>
 
       {error && (
         <div

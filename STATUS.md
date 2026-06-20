@@ -12,6 +12,10 @@
   Parse boundary now throws a typed `GpxError` (codes `invalid` / `no-track` /
   `too-few`) for the three bad-input cases; `App.tsx` catches it and shows a
   friendly inline message instead of producing NaN or crashing. Engine stays pure.
+- "Try an example" button loads a bundled course (`public/example-imperial-trail.gpx`,
+  the Imperial Trail) so a first-time visitor with no GPX sees the full output.
+  Fetched lazily on click; runs through the shared `buildTrack` pipeline — the exact
+  same path as a user upload.
 - Cumulative distance (Haversine)
 - Elevation smoothing + D+. Originally a point-count moving average (window 3);
   now a physical-length pipeline (see the elevation-system entry below). Reported
