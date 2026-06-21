@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="7" fill="#18181b"/>
+  <!-- emerald elevation profile: a climb to a peak, then a descent -->
+  <path d="M4 24 L11 13 L17 18 L28 6" fill="none" stroke="#34d399" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- soft fill under the profile to read as terrain at small sizes -->
+  <path d="M4 24 L11 13 L17 18 L28 6 L28 26 L4 26 Z" fill="#34d399" fill-opacity="0.15"/>
+</svg>

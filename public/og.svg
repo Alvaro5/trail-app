@@ -1,0 +1,43 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#18181b"/>
+    </linearGradient>
+    <linearGradient id="ele" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- brand mark + wordmark -->
+  <g transform="translate(80 64)">
+    <rect width="56" height="56" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+    <path d="M12 42 L22 24 L31 32 L48 12" fill="none" stroke="#34d399" stroke-width="4"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="152" y="104" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="40" font-weight="700" fill="#fafafa">GradePace</text>
+
+  <!-- headline -->
+  <text x="80" y="228" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="76" font-weight="800" fill="#fafafa">Grade-adjusted trail</text>
+  <text x="80" y="308" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="76" font-weight="800" fill="#fafafa">race pacing.</text>
+
+  <!-- tagline -->
+  <text x="82" y="372" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="29" font-weight="400" fill="#a1a1aa">Per-km pace, climbs &amp; power-hike splits — straight from your GPX.</text>
+
+  <!-- elevation profile motif in a clean band below the copy -->
+  <g stroke="#27272a" stroke-width="1">
+    <line x1="80" y1="460" x2="1120" y2="460"/>
+    <line x1="80" y1="540" x2="1120" y2="540"/>
+  </g>
+  <path d="M80 510 L210 470 L320 488 L440 448 L560 478 L690 442 L820 482 L940 456 L1120 470 L1120 560 L80 560 Z"
+        fill="url(#ele)"/>
+  <path d="M80 510 L210 470 L320 488 L440 448 L560 478 L690 442 L820 482 L940 456 L1120 470"
+        fill="none" stroke="#34d399" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

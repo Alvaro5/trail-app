@@ -452,9 +452,10 @@ function App() {
   return (
     <main className="min-h-screen px-4 py-10">
       <div className="mx-auto max-w-3xl">
-        <h1 className="text-3xl font-bold tracking-tight">Trail Pacing</h1>
+        <h1 className="text-3xl font-bold tracking-tight">GradePace</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Grade-adjusted race plan from a GPX track
+          Grade-adjusted race plans from your GPX — per-km pace, climbs, and
+          power-hike splits
         </p>
         <div className="mt-6">
           <GpxUpload />
