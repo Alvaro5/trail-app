@@ -200,7 +200,10 @@ function GpxUpload() {
     const file = event.target.files?.[0];
     if (!file) return;
     setTitle(file.name.replace(/\.gpx$/i, ""));
-    loadGpx(file.text(), "Couldn't read this file. Please try a different GPX.");
+    loadGpx(
+      file.text(),
+      "Couldn't read this file. Please try a different GPX.",
+    );
   }
 
   // Lazily fetch the bundled course so it never weighs on first paint — only the
@@ -380,7 +383,7 @@ function GpxUpload() {
             <ResponsiveContainer width="100%" height={160}>
               <AreaChart
                 data={track.profile}
-                margin={{ top: 5, right: 5, bottom: 0, left: -10 }}
+                margin={{ top: 5, right: 5, bottom: 0, left: 0 }}
               >
                 <defs>
                   <linearGradient id="ele" x1="0" y1="0" x2="0" y2="1">
@@ -399,7 +402,7 @@ function GpxUpload() {
                   tickLine={false}
                 />
                 <YAxis
-                  width={44}
+                  width={52}
                   stroke="#71717a"
                   fontSize={12}
                   tickLine={false}
@@ -480,54 +483,56 @@ function GpxUpload() {
               min-width and scroll horizontally inside its own box so the page
               layout never breaks. */}
           <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[34rem] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-400">
-                <th className="py-2 pr-4 text-left font-medium">km</th>
-                <th className="py-2 pr-4 text-right font-medium">grade</th>
-                <th className="py-2 pr-4 text-right font-medium">D+</th>
-                <th className="py-2 pr-4 text-right font-medium">hike</th>
-                <th className="py-2 pr-4 text-right font-medium">pace</th>
-                <th className="py-2 text-right font-medium">elapsed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {splits.map((s) => (
-                <tr
-                  key={s.km}
-                  className="border-b border-zinc-800/70 tabular-nums text-zinc-200 hover:bg-zinc-900/40"
-                >
-                  <td className="py-1.5 pr-4">
-                    {s.km}
-                    {s.distanceKm < 0.95 ? ` (${s.distanceKm.toFixed(2)})` : ""}
-                  </td>
-                  <td
-                    className={`py-1.5 pr-4 text-right ${gradeClass(s.grade)}`}
-                  >
-                    {fmtGrade(s.grade)}
-                  </td>
-                  <td className="py-1.5 pr-4 text-right">
-                    {s.gainM.toFixed(0)} m
-                  </td>
-                  <td className="py-1.5 pr-4 text-right">
-                    {s.hikeFraction > 0 ? (
-                      <span className="text-emerald-400">
-                        {(s.hikeFraction * 100).toFixed(0)}%
-                      </span>
-                    ) : (
-                      <span className="text-zinc-600">—</span>
-                    )}
-                  </td>
-                  <td className="py-1.5 pr-4 text-right">
-                    {fmtPace(s.paceSecPerKm)}/km
-                  </td>
-                  <td className="py-1.5 text-right">
-                    {fmtClock(s.elapsedSec)}
-                  </td>
+            <table className="w-full min-w-[34rem] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-400">
+                  <th className="py-2 pr-4 text-left font-medium">km</th>
+                  <th className="py-2 pr-4 text-right font-medium">grade</th>
+                  <th className="py-2 pr-4 text-right font-medium">D+</th>
+                  <th className="py-2 pr-4 text-right font-medium">hike</th>
+                  <th className="py-2 pr-4 text-right font-medium">pace</th>
+                  <th className="py-2 text-right font-medium">elapsed</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {splits.map((s) => (
+                  <tr
+                    key={s.km}
+                    className="border-b border-zinc-800/70 tabular-nums text-zinc-200 hover:bg-zinc-900/40"
+                  >
+                    <td className="py-1.5 pr-4">
+                      {s.km}
+                      {s.distanceKm < 0.95
+                        ? ` (${s.distanceKm.toFixed(2)})`
+                        : ""}
+                    </td>
+                    <td
+                      className={`py-1.5 pr-4 text-right ${gradeClass(s.grade)}`}
+                    >
+                      {fmtGrade(s.grade)}
+                    </td>
+                    <td className="py-1.5 pr-4 text-right">
+                      {s.gainM.toFixed(0)} m
+                    </td>
+                    <td className="py-1.5 pr-4 text-right">
+                      {s.hikeFraction > 0 ? (
+                        <span className="text-emerald-400">
+                          {(s.hikeFraction * 100).toFixed(0)}%
+                        </span>
+                      ) : (
+                        <span className="text-zinc-600">—</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-4 text-right">
+                      {fmtPace(s.paceSecPerKm)}/km
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {fmtClock(s.elapsedSec)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

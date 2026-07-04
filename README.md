@@ -1,4 +1,4 @@
-# Trail App
+# GradePace
 
 A grade-adjusted pacing tool for trail races. Upload a course GPX file and get a
 per-kilometer pacing plan — target pace, elevation gain, run/hike split, and
