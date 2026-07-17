@@ -28,6 +28,7 @@ const {
   gradients,
   minettiCost,
   actualSegmentTimes,
+  movingTimeSec,
   calibrateTerrainFactor,
 } = await import("../src/lib/pacing.ts");
 
@@ -87,7 +88,7 @@ const fmtHMS = (sec: number) => {
 
 console.log(
   `assumptions: flat=${FLAT}s/km  vam=${VAM}m/h  gate=${GATE}\n` +
-    `${"file".padEnd(28)} ${"dist".padStart(8)} ${"actual".padStart(9)} ${"predict".padStart(9)} ${"factor".padStart(8)}`,
+    `${"file".padEnd(28)} ${"dist".padStart(8)} ${"elapsed".padStart(9)} ${"moving".padStart(9)} ${"predict".padStart(9)} ${"factor".padStart(8)}`,
 );
 
 type Breakdown = ReturnType<typeof bucketPredict>;
@@ -121,16 +122,17 @@ for (const file of files) {
 
     if (factor === null) {
       console.log(
-        `${name.padEnd(28)} ${distKm.padStart(8)} ${"—".padStart(9)} ${"—".padStart(9)} ${"NO TIME".padStart(8)}`,
+        `${name.padEnd(28)} ${distKm.padStart(8)} ${"—".padStart(9)} ${"—".padStart(9)} ${"—".padStart(9)} ${"NO TIME".padStart(8)}`,
       );
       continue;
     }
 
-    const actualTotal = actual!.reduce((s, t) => s + t, 0);
-    // factor = actualTotal / predictedTotal  ⇒  predictedTotal = actualTotal / factor
-    const predictedTotal = actualTotal / factor;
+    const elapsedTotal = actual!.reduce((s, t) => s + t, 0);
+    const movingTotal = movingTimeSec(points)!;
+    // factor = movingTotal / predictedTotal  ⇒  predictedTotal = movingTotal / factor
+    const predictedTotal = movingTotal / factor;
     console.log(
-      `${name.padEnd(28)} ${distKm.padStart(8)} ${fmtHMS(actualTotal).padStart(9)} ${fmtHMS(predictedTotal).padStart(9)} ${factor.toFixed(3).padStart(8)}`,
+      `${name.padEnd(28)} ${distKm.padStart(8)} ${fmtHMS(elapsedTotal).padStart(9)} ${fmtHMS(movingTotal).padStart(9)} ${fmtHMS(predictedTotal).padStart(9)} ${factor.toFixed(3).padStart(8)}`,
     );
 
     breakdowns.push({ name, b: bucketPredict(dists, grades) });

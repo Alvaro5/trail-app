@@ -8,6 +8,7 @@ import {
   parseGpx,
   GpxError,
   actualSegmentTimes,
+  movingTimeSec,
   calibrateTerrainFactor,
   resampleEven,
   smoothElevation,
@@ -273,17 +274,52 @@ describe("calibrateTerrainFactor", () => {
     const splits = computeSplits(dists, grades, FLAT, VAM, GATE, 1);
     const segModelSec = splits.map((s) => s.paceSecPerKm * s.distanceKm);
 
-    // Build a recorded effort that took EXACTLY 1.15× the model, segment by segment.
+    // Build a recorded effort that took EXACTLY 1.15× the model, segment by
+    // segment. Raw points need REAL spacing now: the moving-time filter derives
+    // per-segment speed from raw coordinates, and coincident points would all
+    // read as "stopped". 0.009° of latitude ≈ 1000 m.
     const TRUTH = 1.15;
     const points: TrackPoint[] = [{ lat: 0, lon: 0, ele: 0, time: 0 }];
     let cumMs = 0;
-    for (const sec of segModelSec) {
+    segModelSec.forEach((sec, i) => {
       cumMs += sec * TRUTH * 1000;
-      points.push({ lat: 0, lon: 0, ele: 0, time: cumMs });
-    }
+      points.push({ lat: (i + 1) * 0.009, lon: 0, ele: 0, time: cumMs });
+    });
 
     const factor = calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE);
     expect(factor).not.toBeNull();
+    expect(factor!).toBeCloseTo(TRUTH, 6);
+  });
+
+  it("excludes stopped time from the fit (aid-station standstill)", () => {
+    const grades = [0, 0.1, -0.1, 0.15];
+    const dists = [0];
+    for (let i = 0; i < grades.length; i++) dists.push(dists[i] + 1000);
+    const splits = computeSplits(dists, grades, FLAT, VAM, GATE, 1);
+    const segModelSec = splits.map((s) => s.paceSecPerKm * s.distanceKm);
+
+    const TRUTH = 1.15;
+    const base: TrackPoint[] = [{ lat: 0, lon: 0, ele: 0, time: 0 }];
+    let cumMs = 0;
+    segModelSec.forEach((sec, i) => {
+      cumMs += sec * TRUTH * 1000;
+      base.push({ lat: (i + 1) * 0.009, lon: 0, ele: 0, time: cumMs });
+    });
+
+    // Insert a 10-minute standstill after the 2nd point: the clock advances,
+    // the coordinates don't. Every later timestamp shifts by the stop length.
+    const stop = base[1];
+    const points = [
+      base[0],
+      base[1],
+      { ...stop, time: stop.time! + 300_000 },
+      { ...stop, time: stop.time! + 600_000 },
+      ...base.slice(2).map((p) => ({ ...p, time: p.time! + 600_000 })),
+    ];
+
+    // A raw-elapsed fit would inflate the factor by the stop; the moving-time
+    // fit must still recover exactly the true multiple.
+    const factor = calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE);
     expect(factor!).toBeCloseTo(TRUTH, 6);
   });
 
@@ -298,6 +334,38 @@ describe("calibrateTerrainFactor", () => {
     expect(
       calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE),
     ).toBeNull();
+  });
+});
+
+describe("movingTimeSec", () => {
+  it("equals total elapsed time when there are no stops", () => {
+    // 1000 m in 400 s (2.5 m/s), twice.
+    const points: TrackPoint[] = [
+      { lat: 0, lon: 0, ele: 0, time: 0 },
+      { lat: 0.009, lon: 0, ele: 0, time: 400_000 },
+      { lat: 0.018, lon: 0, ele: 0, time: 800_000 },
+    ];
+    expect(movingTimeSec(points)).toBeCloseTo(800, 6);
+  });
+
+  it("drops a paused-watch gap (huge Δt, negligible Δdist)", () => {
+    const points: TrackPoint[] = [
+      { lat: 0, lon: 0, ele: 0, time: 0 },
+      { lat: 0.009, lon: 0, ele: 0, time: 400_000 },
+      // Watch paused for 15 min; resumed a couple of metres away.
+      { lat: 0.009_02, lon: 0, ele: 0, time: 1_300_000 },
+      { lat: 0.018, lon: 0, ele: 0, time: 1_700_000 },
+    ];
+    // Only the two real 400 s segments count.
+    expect(movingTimeSec(points)).toBeCloseTo(800, 6);
+  });
+
+  it("returns null on an untimed course", () => {
+    const points: TrackPoint[] = [
+      { lat: 0, lon: 0, ele: 0 },
+      { lat: 0.009, lon: 0, ele: 0 },
+    ];
+    expect(movingTimeSec(points)).toBeNull();
   });
 });
 

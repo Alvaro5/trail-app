@@ -16,6 +16,9 @@ import {
   cumulativeGain,
   gradients,
   computeSplits,
+  actualSegmentTimes,
+  movingTimeSec,
+  calibrateTerrainFactor,
   GpxError,
   type GpxErrorCode,
   type Split,
@@ -43,6 +46,23 @@ const GPX_ERROR_MESSAGE: Record<GpxErrorCode, string> = {
 const RESAMPLE_INTERVAL_M = 10; // even spacing that kills Δdist gradient spikes
 const SMOOTH_WINDOW_M = 30; // physical low-pass; keep ≥ ~3× the resample interval
 const D_PLUS_THRESHOLD_M = 5; // hysteresis deadband for D+ (noise floor; 0 = naive sum)
+
+// Result of fitting the terrain factor against one recorded run.
+type Calibration = {
+  fileName: string;
+  factor: number; // movingSec / predictedSec — the measured terrain factor
+  distanceKm: number;
+  movingSec: number; // stops filtered out
+  elapsedSec: number; // raw clock time, shown so the user sees what was removed
+  predictedSec: number; // pure model (×1.00) over the same course
+};
+
+// Outside this band the "measurement" is almost certainly not measuring terrain:
+// route exports carry synthetic ~15 km/h timestamps (factors like ×0.4), and a
+// walked outing fits ×1.9+. We still show the number, but with a warning, and
+// clamp what can be applied to the slider's range.
+const FACTOR_PLAUSIBLE_MIN = 0.85;
+const FACTOR_PLAUSIBLE_MAX = 1.5;
 
 type Track = {
   distances: number[];
@@ -185,6 +205,84 @@ function GpxUpload() {
   // so we can badge it as an example rather than let it pass for the visitor's
   // own race. Cleared the moment a user upload succeeds.
   const [fromExample, setFromExample] = useState(false);
+  const [calib, setCalib] = useState<Calibration | null>(null);
+  const [calibError, setCalibError] = useState<string | null>(null);
+
+  // Fit the terrain factor against a recorded run: run the forward model (at
+  // ×1.00) over THAT run's course with the current pace inputs, then divide the
+  // run's actual MOVING time by the prediction. The fit deliberately uses the
+  // raw points for timing and the resampled geometry for prediction — same
+  // discipline as the engine (see calibrateTerrainFactor).
+  function handleCalibFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCalibError(null);
+    setCalib(null);
+    file
+      .text()
+      .then((text) => {
+        const points = parseGpx(text);
+        const resampled = resampleEven(
+          points,
+          cumulativeDistances(points),
+          RESAMPLE_INTERVAL_M,
+        );
+        const dists = resampled.dists;
+        const grades = gradients(
+          smoothElevationByDistance(resampled.points, dists, SMOOTH_WINDOW_M),
+          dists,
+        );
+        const factor = calibrateTerrainFactor(
+          points,
+          dists,
+          grades,
+          parsePace(paceText),
+          Math.max(1, vam),
+          hikeAbovePct / 100,
+        );
+        if (factor === null) {
+          setCalibError(
+            "This GPX has no timestamps — it looks like a planned route, not a recorded run. Export the recorded activity (Strava, Garmin, COROS…) instead.",
+          );
+          trackEvent("calibrate-error", { code: "no-time" });
+          return;
+        }
+        const movingSec = movingTimeSec(points)!;
+        const elapsedSec = actualSegmentTimes(points)!.reduce(
+          (sum, t) => sum + t,
+          0,
+        );
+        setCalib({
+          fileName: file.name,
+          factor,
+          distanceKm: dists[dists.length - 1] / 1000,
+          movingSec,
+          elapsedSec,
+          predictedSec: movingSec / factor,
+        });
+        trackEvent("calibrate-run", { factor: Number(factor.toFixed(3)) });
+      })
+      .catch((err) => {
+        setCalibError(
+          err instanceof GpxError
+            ? GPX_ERROR_MESSAGE[err.code]
+            : "Couldn't read this file. Please try a different GPX.",
+        );
+        trackEvent("calibrate-error", {
+          code: err instanceof GpxError ? err.code : "other",
+        });
+        console.error(err);
+      });
+  }
+
+  function applyCalibration() {
+    if (!calib) return;
+    // Keep the applied value inside the slider's range; the raw measurement
+    // stays visible in the result line either way.
+    const clamped = Math.min(1.6, Math.max(0.8, calib.factor));
+    setTerrainFactor(Math.round(clamped * 100) / 100);
+    trackEvent("calibrate-apply", { factor: Number(calib.factor.toFixed(2)) });
+  }
 
   // Run any GPX text through the pipeline and reflect the result (or a friendly
   // error) in state. Shared by file upload and the bundled example so both take
@@ -435,16 +533,85 @@ function GpxUpload() {
                 />
                 <SliderField
                   label="Terrain slowdown"
-                  hint="extra time for technical or rough ground (×1.00 = none)"
+                  hint="extra time for technical or rough ground (×1.00 = none; below = faster than the model). Best measured, not guessed — see “Calibrate from a real run”."
                   display={`×${terrainFactor.toFixed(2)}`}
                   value={terrainFactor}
-                  min={1}
-                  max={1.5}
-                  step={0.05}
+                  min={0.8}
+                  max={1.6}
+                  step={0.01}
                   onChange={setTerrainFactor}
                 />
               </div>
             </details>
+          </div>
+
+          {/* Self-calibration: measure the terrain factor from a recorded run
+              instead of guessing the slider. */}
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Calibrate from a real run
+            </h2>
+            <p className="mt-2 text-sm text-zinc-400">
+              Upload a run you <span className="text-zinc-200">recorded</span>{" "}
+              (a GPX with timestamps, from your watch or phone). We predict that
+              run with your pace settings, compare against what you actually
+              did — stops filtered out — and measure your personal terrain
+              factor instead of guessing it.
+            </p>
+            <input
+              type="file"
+              accept=".gpx"
+              onChange={handleCalibFile}
+              className="mt-3 block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border file:border-zinc-600 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-200 hover:file:border-emerald-500"
+            />
+            {calibError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+              >
+                {calibError}
+              </div>
+            )}
+            {calib && (
+              <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-2.5 text-sm text-zinc-300">
+                <p>
+                  <span className="font-medium text-zinc-100">
+                    {calib.fileName}
+                  </span>{" "}
+                  — {calib.distanceKm.toFixed(1)} km, moving{" "}
+                  {fmtClock(calib.movingSec)}
+                  {calib.elapsedSec - calib.movingSec >= 60 &&
+                    ` (${fmtClock(calib.elapsedSec)} on the clock — stops removed)`}
+                  . The model at ×1.00 predicts {fmtClock(calib.predictedSec)},
+                  so your measured terrain factor is{" "}
+                  <span className="font-semibold text-emerald-400">
+                    ×{calib.factor.toFixed(2)}
+                  </span>
+                  .
+                </p>
+                {/* Outside the plausible band the number isn't measuring
+                    terrain (synthetic route timestamps, a walked outing, a
+                    badly wrong flat pace) — warn and offer NO apply button
+                    rather than apply a knowingly bogus value. */}
+                {calib.factor < FACTOR_PLAUSIBLE_MIN ||
+                calib.factor > FACTOR_PLAUSIBLE_MAX ? (
+                  <p className="mt-2 text-amber-300">
+                    That number looks implausible for a run, so it can't be
+                    applied. Check that this is a genuinely recorded activity —
+                    route exports often carry estimated timestamps — and that
+                    the flat pace above matches the shape you were in that day.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={applyCalibration}
+                    className="mt-2 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+                  >
+                    Use ×{calib.factor.toFixed(2)} for this plan
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">

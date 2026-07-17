@@ -162,20 +162,43 @@
   closes the X-post → app → follow loop. Outbound clicks tracked via Umami
   `data-umami-event` attributes (`click-x`, `click-github`), no JS needed.
 
+- **Self-calibration v1 — moving-time filter + UI.** Two pieces:
+  1. Engine: `movingTimeSec(points, minSpeed=0.3 m/s)` — per-segment speed from
+     the RAW points; segments slower than 0.3 m/s are stops (0.3 chosen because
+     the slowest deliberate hiking the model produces — VAM 750 on the 45%
+     clamp — is still ≈0.46 m/s horizontal; standing GPS jitter is far below).
+     Catches both stop shapes (standing watch = tiny-Δdist segments; paused
+     watch = one huge-Δt segment). `calibrateTerrainFactor` now divides MOVING
+     time by predicted — this resolves honest-limitation #1 (stopped time).
+  2. UI: "Calibrate from a real run" card — upload a recorded GPX, see
+     "moving X of Y elapsed, model predicts Z → factor ×F", one click applies
+     it to the terrain slider (widened to 0.8–1.6, step 0.01; default still
+     ×1.00). Plausibility warning outside 0.85–1.5.
+  - **Measured on the four real training runs** (was 1.048–1.095 on raw
+    elapsed): quais ×0.993, pajariel ×1.013, bois ×1.062, campagne ×1.080.
+    The flat quais run had 7½ min of traffic-light stops; filtered, Minetti
+    predicts it within 30 s — the engine is near-exact on clean flat ground
+    and the factor now measures terrain, not stops.
+  - **Trap found, guarded in UI:** route exports (Strava route builder etc.)
+    embed SYNTHETIC ~15 km/h timestamps — Imperial_Trail.gpx "fits" ×0.43.
+    Timestamps existing ≠ timestamps real; hence the plausibility band. A
+    real detector (constant-speed heuristic) is future work.
+  - Analytics: `calibrate-run` (with factor), `calibrate-apply`,
+    `calibrate-error` (with code).
+  - Known: the factor is fitted against the CURRENT flat-pace/VAM/gate inputs;
+    changing them afterwards makes it stale. Fine for v1; revisit if confusing.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay
   smoother (preserves climb peaks better than a box MA — the research flagged it,
   but it's harder to explain and the box MA is fine for now).
-- **Wire calibration into the UI.** `calibrateTerrainFactor` exists as a pure fn
-  but nothing calls it. Next: let the user upload a past *timed* effort, run the
-  fit, and feed the measured factor into the forward model (replacing the guessed
-  slider). Decide UX for cold-start (no history) vs calibrated.
-- **Moving-time filter** in `actualSegmentTimes` before the fit trusts totals
-  (limitation 1 above) — drop near-zero-speed segments so aid stops don't inflate
-  the factor.
-- Calibration: decide a believable terrain factor for Fontainebleau using the
-  68.75 km finish as a gut-check (7:17 @1.00 vs 8:44 @1.20 — which matches reality?)
+- Calibration: decide a believable terrain factor for Fontainebleau. New data
+  point: the four real-run fits now span ×0.99 (flat road) to ×1.08 (campagne
+  trails) with stops filtered — Fontainebleau sand/rocks plausibly ~1.05–1.10.
+  Gut-check against the 68.75 km finish (7:17 @1.00 vs ~7:52 @1.08).
+- Calibration next steps: fit against several efforts (weight recent ones) not
+  a lone run; synthetic-timestamp detector (route exports at constant speed).
 - Fatigue-fade model — ONLY after a second calibration point exists (known split
   or past race time). Do not fit terrain + fatigue against one finish time.
 - Gradient-colored profile chart — now unblocked by the resample (gradients are

@@ -253,6 +253,37 @@ export function actualSegmentTimes(points: TrackPoint[]): number[] | null {
   return times;
 }
 
+// A segment slower than this is "stopped", not moving. 0.3 m/s (~1.1 km/h) sits
+// well below the slowest deliberate movement the model can produce — power-hiking
+// at VAM 750 on the 45% clamp grade still advances ≈0.46 m/s horizontally — while
+// GPS jitter during an aid-station stop (metres of drift over minutes) stays far
+// under it. Both stop shapes fall to the same test: a standing watch records many
+// tiny-distance segments, a paused watch one huge-time segment.
+export const STOPPED_SPEED_MS = 0.3;
+
+// Moving time of a recorded effort: total elapsed seconds excluding stopped
+// segments. This is the number a calibration fit must trust — raw elapsed time
+// includes aid stops, photo breaks, and paused-watch gaps, none of which say
+// anything about terrain difficulty, and all of which would bias a fitted
+// terrain factor high. Speeds are derived from the RAW points (the timing path
+// always runs on raw, truly-timed points — never resampled geometry).
+// Same all-or-nothing discipline as actualSegmentTimes: null without full timing.
+export function movingTimeSec(
+  points: TrackPoint[],
+  minSpeedMs: number = STOPPED_SPEED_MS,
+): number | null {
+  const times = actualSegmentTimes(points);
+  if (times === null) return null;
+  const dists = cumulativeDistances(points);
+  let total = 0;
+  for (let i = 0; i < times.length; i++) {
+    const dt = times[i];
+    if (dt <= 0) continue; // duplicate/out-of-order timestamps carry no signal
+    if ((dists[i + 1] - dists[i]) / dt >= minSpeedMs) total += dt;
+  }
+  return total;
+}
+
 export function minettiCost(i: number): number {
   const x = Math.max(-0.45, Math.min(0.45, i)); // clamp to the paper's validated range
   // Minetti 2002: 155.4 x⁵ − 30.4 x⁴ − 43.3 x³ + 46.3 x² + 19.5 x + 3.6
@@ -376,6 +407,12 @@ export function computeSplits(
 //
 // All-or-nothing on timing, same discipline as actualSegmentTimes: a partially
 // timed track yields null rather than a fit anchored on invented deltas.
+//
+// The actual side is MOVING time (movingTimeSec), not raw elapsed: stopped time
+// says nothing about terrain and would bias the factor high. The predicted side
+// still covers the whole course — segments where the runner stood still span
+// near-zero distance, so their predicted time is negligible and the division
+// stays honest.
 export function calibrateTerrainFactor(
   points: TrackPoint[],
   dists: number[],
@@ -384,9 +421,8 @@ export function calibrateTerrainFactor(
   hikeVamMperH: number,
   transitionGrade: number,
 ): number | null {
-  const actual = actualSegmentTimes(points);
-  if (actual === null) return null;
-  const actualTotal = actual.reduce((sum, t) => sum + t, 0);
+  const actualTotal = movingTimeSec(points);
+  if (actualTotal === null || actualTotal === 0) return null;
 
   const predicted = computeSplits(
     dists,
