@@ -132,6 +132,23 @@
   counted after a completed share, not a dismissed sheet). Chosen over Vercel
   Analytics because the Hobby plan is pageviews-only (custom events are Pro).
   Site created at cloud.umami.is; the live website ID is in `index.html`.
+  Verified live (visit + events in Realtime). Caveat, confirmed first-hand:
+  ad-blockers (EasyPrivacy list) block `cloud.umami.is`, so counts are a floor —
+  a chunk of a dev-leaning audience is invisible. Fine for funnel shape; don't
+  read absolutes as true traffic. Fix if it ever matters: proxy the script
+  through a first-party path (Vercel rewrite) or self-host.
+
+- **Landing page opens on the full dashboard.** First visit auto-loads the
+  bundled Imperial Trail course (ref-guarded mount effect, same `buildTrack`
+  path as everything else), so a visitor from the pinned post sees the product
+  instead of an empty upload form. Badged "EXAMPLE — Imperial Trail" until a
+  user upload succeeds; the example button hides while the example is on
+  screen and returns after an upload ("Back to the example"). Auto-load is
+  tracked as `auto-example` — separate from the `load-example` click — so the
+  intent metric stays honest; an auto-load failure shows NO error banner (the
+  visitor did nothing), just the empty state. Header copy now leads with the
+  product pitch ("most planners assume you run every hill") + a
+  stays-in-your-browser privacy line instead of the feature list.
 
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose

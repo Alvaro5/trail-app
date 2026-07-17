@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -179,29 +179,44 @@ function GpxUpload() {
   const [title, setTitle] = useState("");
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  // True while the dashboard shows the bundled course (auto-loaded or clicked),
+  // so we can badge it as an example rather than let it pass for the visitor's
+  // own race. Cleared the moment a user upload succeeds.
+  const [fromExample, setFromExample] = useState(false);
 
   // Run any GPX text through the pipeline and reflect the result (or a friendly
   // error) in state. Shared by file upload and the bundled example so both take
   // the exact same path. `genericMsg` is the fallback for non-GpxError failures.
-  // `source` labels the analytics events so upload vs example stay separable.
+  // `source` labels the analytics events three ways — the first-visit auto-load
+  // fires for every visitor, so merging it with the example *click* would drown
+  // the intent signal. On auto failure we also stay silent (no error banner):
+  // the visitor did nothing, so they shouldn't see a failure they can't explain —
+  // they just get the normal empty state.
   function loadGpx(
     textPromise: Promise<string>,
     genericMsg: string,
-    source: "upload" | "example",
+    source: "upload" | "example" | "auto",
   ) {
     setError(null);
     textPromise
       .then((text) => {
         setTrack(buildTrack(text));
-        trackEvent(source === "upload" ? "upload-gpx" : "load-example");
+        setFromExample(source !== "upload");
+        trackEvent(
+          { upload: "upload-gpx", example: "load-example", auto: "auto-example" }[
+            source
+          ],
+        );
       })
       .catch((err) => {
         // Map known parse failures to friendly inline copy; anything else gets a
         // generic message so the upload never crashes the page.
         setTrack(null);
-        setError(
-          err instanceof GpxError ? GPX_ERROR_MESSAGE[err.code] : genericMsg,
-        );
+        if (source !== "auto") {
+          setError(
+            err instanceof GpxError ? GPX_ERROR_MESSAGE[err.code] : genericMsg,
+          );
+        }
         // The error code tells us WHICH failure users actually hit in the wild
         // (e.g. how many bring route-only GPX files) — that data decides whether
         // rtept support is worth building.
@@ -224,10 +239,10 @@ function GpxUpload() {
     );
   }
 
-  // Lazily fetch the bundled course so it never weighs on first paint — only the
-  // visitor who clicks "Try an example" pays for it. BASE_URL keeps the path
-  // correct under any Vite base/deploy subpath.
-  function loadExample() {
+  // Fetch the bundled course. The GPX is fetched (not import-bundled) so it
+  // never weighs on the JS bundle; BASE_URL keeps the path correct under any
+  // Vite base/deploy subpath.
+  function loadExample(source: "example" | "auto" = "example") {
     setTitle("Imperial Trail");
     loadGpx(
       fetch(`${import.meta.env.BASE_URL}example-imperial-trail.gpx`).then(
@@ -237,9 +252,21 @@ function GpxUpload() {
         },
       ),
       "Couldn't load the example course. Please try again.",
-      "example",
+      source,
     );
   }
+
+  // First visit: open on the full dashboard (the example course) instead of an
+  // empty page — most visitors arrive from a link on a phone with no GPX file,
+  // so the example IS the demo. Ref-guarded so StrictMode's double-mount in dev
+  // doesn't fetch twice.
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoLoaded.current) return;
+    autoLoaded.current = true;
+    loadExample("auto");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
+  }, []);
 
   // Derive the plan from the parsed track + the effort inputs, so editing a
   // field recomputes without re-uploading. Cheap enough to run every render.
@@ -321,16 +348,21 @@ function GpxUpload() {
           onChange={handleFile}
           className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-emerald-500"
         />
-        <button
-          type="button"
-          onClick={loadExample}
-          className="rounded-md border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-emerald-500 hover:text-white"
-        >
-          Try an example
-        </button>
+        {/* Pointless while the example is already on screen; reappears after a
+            user upload as the way back. */}
+        {!(track && fromExample) && (
+          <button
+            type="button"
+            onClick={() => loadExample()}
+            className="rounded-md border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-emerald-500 hover:text-white"
+          >
+            Back to the example
+          </button>
+        )}
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        No GPX handy? Load the Imperial Trail (Fontainebleau) course.
+        Your GPX is parsed right here in your browser — it never leaves your
+        device.
       </p>
 
       {error && (
@@ -344,6 +376,17 @@ function GpxUpload() {
 
       {track && (
         <div className="mt-8 space-y-6">
+          {fromExample && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-300">
+                Example
+              </span>
+              <span className="text-zinc-400">
+                Imperial Trail, Fontainebleau (70k) — upload your own GPX above
+                to plan your race.
+              </span>
+            </div>
+          )}
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               Your pace
@@ -568,9 +611,13 @@ function App() {
     <main className="min-h-screen px-4 py-10">
       <div className="mx-auto max-w-3xl">
         <h1 className="text-3xl font-bold tracking-tight">GradePace</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Grade-adjusted race plans from your GPX — per-km pace, climbs, and
-          power-hike splits
+        <p className="mt-3 text-lg text-zinc-200">
+          Most pace planners assume you run every hill. You don't — on real
+          trails, steep climbs are power-hikes.
+        </p>
+        <p className="mt-2 text-sm text-zinc-400">
+          GradePace turns a course GPX into a grade-adjusted plan: per-km
+          paces, hike splits, and a projected finish.
         </p>
         <div className="mt-6">
           <GpxUpload />
