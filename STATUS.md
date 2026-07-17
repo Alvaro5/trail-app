@@ -188,6 +188,18 @@
   - Known: the factor is fitted against the CURRENT flat-pace/VAM/gate inputs;
     changing them afterwards makes it stale. Fine for v1; revisit if confusing.
 
+- **Honest range around the projected finish (product-thesis item).** New pure
+  fn `finishRange(likelySec, calibrated)`: center unchanged (the model's
+  estimate — this is presentation, not a model change); band −8%/+10%
+  uncalibrated, −5%/+7% after applying a measured factor. Grounding: day-of
+  noise ≈4–9% on a 70k, plus terrain-guess spread (measured factors vary ±4%
+  across the four calibration runs; a hand-set slider is worse). Asymmetric:
+  races go long more often than short. Shown as "expect H:MM – H:MM" (no
+  seconds — that would be false precision again) on the Projected-finish card
+  (with a "· calibrated" tag) and on the share image under the hero time.
+  Hand-moving the terrain slider clears the calibrated flag → band widens.
+  Band constants exported from pacing.ts; tests lock both bands + narrowing.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

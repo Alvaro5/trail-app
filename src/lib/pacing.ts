@@ -393,6 +393,37 @@ export function computeSplits(
   return splits;
 }
 
+// Uncertainty band for the projected finish, as fractions of the central
+// estimate. A single to-the-second number is false precision — the honest
+// output is a range (see the product thesis):
+// - Day-of noise: the same runner on the same course swings 20–40 min over
+//   ~70 km (≈4–9%) with sleep, weather, and fueling — irreducible from a GPX.
+// - Terrain/model spread: even MEASURED factors vary ≈±4% across this
+//   project's four calibration runs; a guessed slider is far worse, which is
+//   why the uncalibrated band is wider.
+// Asymmetric on purpose: long races go long much more often than they go
+// short (heat, stomach, cramps all add time; breakthrough days are rare).
+export const RANGE_UNCALIBRATED = { below: 0.08, above: 0.1 } as const;
+export const RANGE_CALIBRATED = { below: 0.05, above: 0.07 } as const;
+
+export type FinishRange = {
+  lowSec: number;
+  likelySec: number; // the model's central estimate, unchanged
+  highSec: number;
+};
+
+export function finishRange(
+  likelySec: number,
+  calibrated: boolean,
+): FinishRange {
+  const band = calibrated ? RANGE_CALIBRATED : RANGE_UNCALIBRATED;
+  return {
+    lowSec: likelySec * (1 - band.below),
+    likelySec,
+    highSec: likelySec * (1 + band.above),
+  };
+}
+
 // Self-calibration, simplest form: invert the forward model against a past
 // recorded effort to MEASURE the terrain factor instead of making the runner
 // guess it. We run pure Minetti (terrainFactor = 1.0) over the same course, then

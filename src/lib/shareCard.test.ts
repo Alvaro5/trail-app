@@ -29,6 +29,16 @@ describe("buildShareCardSvg", () => {
     expect(svg).toContain("trail-app-two.vercel.app");
   });
 
+  it("renders the expect-range line only when a range is provided", () => {
+    expect(buildShareCardSvg(base)).not.toContain("expect");
+    const withRange = buildShareCardSvg({
+      ...base,
+      rangeLowSec: 11357, // 3:09:17 → 3:09
+      rangeHighSec: 13580, // 3:46:20 → 3:46
+    });
+    expect(withRange).toContain("expect 3:09 – 3:46");
+  });
+
   it("escapes title markup and falls back when empty", () => {
     expect(buildShareCardSvg({ ...base, title: "A & B <x>" })).toContain(
       "A &amp; B &lt;x&gt;",

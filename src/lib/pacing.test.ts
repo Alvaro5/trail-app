@@ -10,6 +10,7 @@ import {
   actualSegmentTimes,
   movingTimeSec,
   calibrateTerrainFactor,
+  finishRange,
   resampleEven,
   smoothElevation,
   smoothElevationByDistance,
@@ -334,6 +335,25 @@ describe("calibrateTerrainFactor", () => {
     expect(
       calibrateTerrainFactor(points, dists, grades, FLAT, VAM, GATE),
     ).toBeNull();
+  });
+});
+
+describe("finishRange", () => {
+  it("brackets the central estimate with the uncalibrated band (−8%/+10%)", () => {
+    const r = finishRange(10000, false);
+    expect(r.likelySec).toBe(10000); // center never moves
+    expect(r.lowSec).toBeCloseTo(9200, 6);
+    expect(r.highSec).toBeCloseTo(11000, 6);
+  });
+
+  it("narrows the band when calibrated (−5%/+7%)", () => {
+    const cal = finishRange(10000, true);
+    expect(cal.lowSec).toBeCloseTo(9500, 6);
+    expect(cal.highSec).toBeCloseTo(10700, 6);
+    const uncal = finishRange(10000, false);
+    expect(cal.highSec - cal.lowSec).toBeLessThan(
+      uncal.highSec - uncal.lowSec,
+    );
   });
 });
 

@@ -19,11 +19,12 @@ import {
   actualSegmentTimes,
   movingTimeSec,
   calibrateTerrainFactor,
+  finishRange,
   GpxError,
   type GpxErrorCode,
   type Split,
 } from "./lib/pacing";
-import { fmtClock, fmtPace } from "./lib/format";
+import { fmtClock, fmtClockShort, fmtPace } from "./lib/format";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
 import { buildShareCardSvg, type ShareCardData } from "./lib/shareCard";
@@ -207,6 +208,9 @@ function GpxUpload() {
   const [fromExample, setFromExample] = useState(false);
   const [calib, setCalib] = useState<Calibration | null>(null);
   const [calibError, setCalibError] = useState<string | null>(null);
+  // True while the terrain factor comes from a measured fit — narrows the
+  // finish range. Manually touching the terrain slider makes it a guess again.
+  const [calibrated, setCalibrated] = useState(false);
 
   // Fit the terrain factor against a recorded run: run the forward model (at
   // ×1.00) over THAT run's course with the current pace inputs, then divide the
@@ -281,6 +285,7 @@ function GpxUpload() {
     // stays visible in the result line either way.
     const clamped = Math.min(1.6, Math.max(0.8, calib.factor));
     setTerrainFactor(Math.round(clamped * 100) / 100);
+    setCalibrated(true);
     trackEvent("calibrate-apply", { factor: Number(calib.factor.toFixed(2)) });
   }
 
@@ -381,6 +386,8 @@ function GpxUpload() {
       )
     : [];
   const timeSec = splits.length ? splits[splits.length - 1].elapsedSec : 0;
+  // Honest range around the central estimate; calibration narrows the band.
+  const range = finishRange(timeSec, calibrated);
 
   // Render the current plan to a branded PNG and share it (native share sheet
   // when available, e.g. mobile) or download it. Every shared card carries the
@@ -400,6 +407,8 @@ function GpxUpload() {
         distanceKm: track.distanceKm,
         gainM: track.gainM,
         timeSec,
+        rangeLowSec: range.lowSec,
+        rangeHighSec: range.highSec,
         hikePct: totalKm > 0 ? (hikeMeters / (totalKm * 1000)) * 100 : 0,
         avgPaceSecPerKm: totalKm > 0 ? timeSec / totalKm : 0,
         profile: track.profile,
@@ -539,7 +548,10 @@ function GpxUpload() {
                   min={0.8}
                   max={1.6}
                   step={0.01}
-                  onChange={setTerrainFactor}
+                  onChange={(n) => {
+                    setTerrainFactor(n);
+                    setCalibrated(false); // hand-set = a guess again → wide band
+                  }}
                 />
               </div>
             </details>
@@ -674,8 +686,28 @@ function GpxUpload() {
               label="Elevation gain"
               value={`${track.gainM.toFixed(0)} m`}
             />
-            <StatCard label="Projected time" value={fmtClock(timeSec)} />
+            {/* The range IS the product thesis: a to-the-second finish would
+                be false precision. Center = the model's central estimate. */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-xs uppercase tracking-wider text-zinc-400">
+                Projected finish
+              </div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                {fmtClock(timeSec)}
+              </div>
+              <div className="mt-0.5 text-sm tabular-nums text-zinc-400">
+                expect {fmtClockShort(range.lowSec)} –{" "}
+                {fmtClockShort(range.highSec)}
+                {calibrated && (
+                  <span className="text-emerald-400"> · calibrated</span>
+                )}
+              </div>
+            </div>
           </div>
+          <p className="text-xs text-zinc-500">
+            A range, not a promise: day-of conditions swing a race this long by
+            20–40 minutes. Calibrating from a real run narrows the band.
+          </p>
 
           {/* Share/export: render the plan to a branded PNG. The course name
               feeds the image title; siteUrl is taken at runtime so the

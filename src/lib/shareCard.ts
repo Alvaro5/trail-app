@@ -6,13 +6,17 @@
 // colors and a system-font stack, so it rasterizes cleanly in any browser
 // (see src/lib/rasterize.ts). The visual language mirrors public/og.svg.
 
-import { fmtClock, fmtPace } from "./format";
+import { fmtClock, fmtClockShort, fmtPace } from "./format";
 
 export type ShareCardData = {
   title: string;
   distanceKm: number;
   gainM: number;
   timeSec: number;
+  // Optional uncertainty band around timeSec; when present, the card shows
+  // "EXPECT L – H" under the hero finish (the honest-range product thesis).
+  rangeLowSec?: number;
+  rangeHighSec?: number;
   hikePct: number; // 0–100
   avgPaceSecPerKm: number;
   profile: { km: number; ele: number }[];
@@ -122,9 +126,13 @@ export function buildShareCardSvg(d: ShareCardData): string {
   <!-- course title -->
   <text x="80" y="200" font-family="${FONT}" font-size="50" font-weight="800" fill="#fafafa">${title}</text>
 
-  <!-- hero: projected finish -->
+  <!-- hero: projected finish (+ honest range when provided) -->
   <text x="80" y="262" font-family="${FONT}" font-size="20" font-weight="600" letter-spacing="2" fill="#71717a">PROJECTED FINISH</text>
-  <text x="80" y="362" font-family="${FONT}" font-size="104" font-weight="800" fill="#34d399">${finish}</text>
+  <text x="80" y="362" font-family="${FONT}" font-size="104" font-weight="800" fill="#34d399">${finish}</text>${
+    d.rangeLowSec !== undefined && d.rangeHighSec !== undefined
+      ? `\n  <text x="80" y="398" font-family="${FONT}" font-size="24" font-weight="600" fill="#a1a1aa">expect ${fmtClockShort(d.rangeLowSec)} – ${fmtClockShort(d.rangeHighSec)}</text>`
+      : ""
+  }
 
   <!-- stat strip -->
 ${stat(80, "DISTANCE", dist)}
