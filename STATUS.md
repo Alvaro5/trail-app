@@ -632,13 +632,20 @@
 - Polish: pace stepper, hover tooltips on splits, mobile layout
 
 ## Known issues
-- Per-km splits don't split the segment straddling a 1000 m boundary, so each km is
-  ~1000–1020 m and distanceKm drifts <2% above 1.0. Principled fix = proportional split at
-  the boundary; deferred for v0. Interim: the final partial km shows its actual distance.
 - parseGpx forward-fills missing <ele>; fine for clean files, revisit if the messier
   September race file has long elevation gaps.
 
 ## Fixed (was a known issue)
+- Per-km buckets ran long (~1000–1020 m, <2% drift) because the segment
+  straddling a boundary joined the earlier bucket whole. computeSplits now
+  splits boundary segments PROPORTIONALLY (time, rise, hike meters scale with
+  the fraction taken; a while-loop even handles segments longer than a
+  bucket). Every full bucket is exactly 1000 m / 1 mile; the remainder is the
+  last row. Verified on the real Imperial GPX: 69 rows, zero non-exact full
+  buckets, finish 7:35:30 unchanged to the second (time is conserved by
+  construction; the row-level pace/D+ shift is the honest re-allocation).
+  Locked by a new boundary-split test suite (uniform-course pace equality,
+  proportional gain, Σ pace×dist === finish, segment > bucket).
 - Gradient spikes (saw +3722%) from near-coincident GPS points — fixed by
   `resampleEven` (10 m even spacing before gradients). Max |gradient| on test
   tracks now <35%.

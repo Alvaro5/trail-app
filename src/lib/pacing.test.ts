@@ -386,12 +386,55 @@ describe("computeSplits bucketMeters", () => {
     const km = computeSplits(dists, grades, 360, 750, 0.18, 1);
     const mi = computeSplits(dists, grades, 360, 750, 0.18, 1, 1609.344);
     expect(mi.length).toBe(2); // 3216 m → one full mile + a partial
-    expect(mi[0].distanceKm * 1000).toBeGreaterThanOrEqual(1609.344);
+    // Full buckets are now EXACTLY one mile (boundary segments are split).
+    expect(mi[0].distanceKm * 1000).toBeCloseTo(1609.344, 6);
     // Same course, same physics — bucketing must not change the finish time.
     expect(mi[mi.length - 1].elapsedSec).toBeCloseTo(
       km[km.length - 1].elapsedSec,
       6,
     );
+  });
+});
+
+describe("computeSplits boundary split", () => {
+  // 100.5 m segments deliberately misaligned with the 1000 m grid: without
+  // proportional splitting every "km" ran long by up to one segment.
+  const dists = Array.from({ length: 33 }, (_, i) => i * 100.5);
+  const flat = Array.from({ length: 32 }, () => 0);
+
+  it("makes every full bucket exactly 1000 m, remainder in the last", () => {
+    const splits = computeSplits(dists, flat, 360, 750, 0.18, 1);
+    expect(splits).toHaveLength(4); // 3216 m → 3 full km + 216 m
+    for (const s of splits.slice(0, -1))
+      expect(s.distanceKm).toBeCloseTo(1, 9);
+    expect(splits[3].distanceKm * 1000).toBeCloseTo(216, 6);
+    expect(
+      splits.reduce((sum, s) => sum + s.distanceKm, 0) * 1000,
+    ).toBeCloseTo(32 * 100.5, 6);
+  });
+
+  it("splits time and gain proportionally at the boundary", () => {
+    // Constant 10% climb: uniform cost per meter, so pace must be identical
+    // across buckets and gain exactly 10% of each bucket's distance.
+    const grades = Array.from({ length: 32 }, () => 0.1);
+    const splits = computeSplits(dists, grades, 360, 750, 0.18, 1);
+    for (const s of splits) {
+      expect(s.paceSecPerKm).toBeCloseTo(splits[0].paceSecPerKm, 6);
+      expect(s.gainM).toBeCloseTo(0.1 * s.distanceKm * 1000, 6);
+    }
+    // The locked invariant, now with exact buckets: Σ pace×dist === finish.
+    const sum = splits.reduce(
+      (acc, s) => acc + s.paceSecPerKm * s.distanceKm,
+      0,
+    );
+    expect(sum).toBeCloseTo(splits[splits.length - 1].elapsedSec, 6);
+  });
+
+  it("handles a single segment longer than the bucket", () => {
+    const splits = computeSplits([0, 2500], [0], 360, 750, 0.18, 1);
+    expect(splits.map((s) => +(s.distanceKm * 1000).toFixed(3))).toEqual([
+      1000, 1000, 500,
+    ]);
   });
 });
 

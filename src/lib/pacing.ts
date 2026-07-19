@@ -416,8 +416,8 @@ export function computeSplits(
 
   for (let i = 1; i < dists.length; i++) {
     const segMeters = dists[i] - dists[i - 1];
+    if (segMeters <= 0) continue;
     const grade = grades[i - 1];
-    const rise = grade * segMeters; // signed: + climbing, − descending
     const { sec, hiked } = segmentTimeSec(
       grade,
       segMeters,
@@ -428,17 +428,34 @@ export function computeSplits(
 
     const adjSec = sec * terrainFactor; // technical/soft ground slows all moving time
 
-    kmMeters += segMeters;
-    kmRise += rise; // net (signed) rise for the km
-    if (rise > 0) kmGain += rise; // D+ counts only the climbs
-    if (hiked) kmHikeMeters += segMeters;
-    kmTimeSec += adjSec;
-    elapsedSec += adjSec;
-
-    if (kmMeters >= bucketMeters) flush(); // close the bucket once it's full
+    // A segment straddling a bucket boundary is split PROPORTIONALLY (time,
+    // rise, hike meters all scale with the fraction taken), so every full
+    // bucket is exactly bucketMeters. Without this, buckets ran long by up
+    // to one segment (~1000-1020 m per "km") and row distances drifted.
+    // The while handles the degenerate segment-longer-than-bucket case too.
+    let remaining = segMeters;
+    while (remaining > 1e-9) {
+      const room = bucketMeters - kmMeters;
+      if (room <= 1e-9) {
+        flush(); // float dust filled the bucket; close it and retry
+        continue;
+      }
+      const take = Math.min(remaining, room);
+      const frac = take / segMeters;
+      const rise = grade * take; // signed: + climbing, − descending
+      kmMeters += take;
+      kmRise += rise; // net (signed) rise for the km
+      if (rise > 0) kmGain += rise; // D+ counts only the climbs
+      if (hiked) kmHikeMeters += take;
+      const t = adjSec * frac;
+      kmTimeSec += t;
+      elapsedSec += t;
+      remaining -= take;
+      if (kmMeters >= bucketMeters - 1e-9) flush();
+    }
   }
 
-  if (kmMeters > 0) flush(); // final partial km
+  if (kmMeters > 1e-9) flush(); // final partial km
 
   return splits;
 }
