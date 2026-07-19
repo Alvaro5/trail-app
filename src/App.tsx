@@ -1409,7 +1409,13 @@ function GpxUpload({
               walks), aid stations with their ETAs in tooltips. Lazy chunk —
               Leaflet + tiles load after the page is interactive. */}
           <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2 light:border-zinc-200 light:bg-white">
-            <Suspense fallback={<div className="h-72" />}>
+            {/* Skeleton shimmer, not a blank: the lazy chunk takes a beat on
+                first visit and an empty box reads as broken. */}
+            <Suspense
+              fallback={
+                <div className="h-72 animate-pulse rounded-lg bg-zinc-800/50 light:bg-zinc-200/60" />
+              }
+            >
               <CourseMap
                 coords={track.coords}
                 grades={track.grades}
@@ -1498,8 +1504,12 @@ function GpxUpload({
 
           <div className={cardClass}>
             {/* Fixed-height fallback so the layout doesn't jump when the
-                chart chunk arrives. */}
-            <Suspense fallback={<div className="h-72" />}>
+                chart chunk arrives; shimmer so it reads as loading. */}
+            <Suspense
+              fallback={
+                <div className="h-72 animate-pulse rounded-lg bg-zinc-800/50 light:bg-zinc-200/60" />
+              }
+            >
               <ElevationChart
                 profile={track.profile}
                 units={units}

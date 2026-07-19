@@ -525,6 +525,15 @@
   Verified live: 7:35:30 projection → 531 g / 3.8 L / 3420 mg / 2126 kcal
   totals, leg partition matches ETAs (checked against hand math).
 
+- **Premium-feel polish batch.** Lazy-chunk Suspense fallbacks are now
+  skeleton shimmers (`animate-pulse` blocks, both themes) instead of blank
+  boxes; `<details>` cards animate open smoothly where supported
+  (`interpolate-size: allow-keywords` + `::details-content` height
+  transition — progressive enhancement, instant-open elsewhere, disabled
+  under prefers-reduced-motion); range sliders get a pointer cursor, a
+  taller hit area, and a visible focus ring (kept native accent styling —
+  full custom thumbs would lose the progress-fill look).
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay
