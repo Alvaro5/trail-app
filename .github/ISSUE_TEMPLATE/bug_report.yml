@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the pacing plan or UI is wrong or broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. GradePace runs entirely in your browser, so the
+        more you can tell me about the GPX and your setup, the faster this gets fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: "The projected finish was 3:12 but the course is 70 km, so that can't be right..."
+    validations:
+      required: true
+  - type: textarea
+    id: gpx
+    attributes:
+      label: The GPX file
+      description: >
+        If you can share the course (a link, or drag the file into the comment
+        box after creating the issue), that makes it reproducible. Note if it's a
+        recorded track (with times) or a route export.
+    validations:
+      required: false
+  - type: input
+    id: settings
+    attributes:
+      label: Settings
+      description: Flat pace, VAM, hike gate, terrain factor, units, language, if relevant.
+      placeholder: "6:00/km, VAM 750, gate 18%, terrain x1.04, metric, EN"
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Browser / device
+      placeholder: "Chrome 141 on macOS, or Safari on iPhone"
+    validations:
+      required: false

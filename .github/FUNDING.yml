@@ -1,0 +1,7 @@
+# Shows a "Sponsor" button on the repo. Fill in the handles you actually use;
+# delete the lines you don't. GitHub validates these, so a wrong handle just
+# hides that entry rather than breaking the page.
+github: [Alvaro5]          # requires GitHub Sponsors enabled on your account
+# ko_fi:            your-handle
+# buy_me_a_coffee:  your-handle
+# custom: ["https://gradepace.vercel.app"]

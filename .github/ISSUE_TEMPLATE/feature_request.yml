@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something that would make the pacing plan more honest or the app more useful.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the racing/planning problem, not just the feature. What can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How would you like it to work? Rough is fine.
+    validations:
+      required: false
+  - type: checkboxes
+    id: thesis
+    attributes:
+      label: Fit check
+      description: GradePace is deliberately about honest self-calibration, not false precision. (Optional.)
+      options:
+        - label: This is about a more honest or personal prediction, not just more knobs to tune.
