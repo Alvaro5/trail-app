@@ -16,6 +16,8 @@ import {
   movingTimeSec,
   median,
   finishRange,
+  parseGpxWaypoints,
+  nearestTrackKm,
   GpxError,
   type GpxErrorCode,
   type Split,
@@ -100,6 +102,10 @@ type Track = {
   distanceKm: number;
   gainM: number;
   profile: { km: number; ele: number }[];
+  // Aid-station km auto-detected from the file's <wpt> waypoints (usually
+  // empty — most route exports carry none). Pre-fills the ravitaillements
+  // field; always user-editable afterwards.
+  fileAidKms: number[];
 };
 
 // Parse + geometry pipeline (see research notes / STATUS.md):
@@ -122,10 +128,23 @@ function buildTrack(text: string): Track {
     SMOOTH_WINDOW_M,
   );
   const grades = gradients(smoothed, distances);
+  const totalKm = distances[distances.length - 1] / 1000;
+  // File waypoints → course km, dropping anything off-course (>200 m away)
+  // or within 200 m of the start/finish (départ/arrivée markers, not aid).
+  const fileAidKms = [
+    ...new Set(
+      parseGpxWaypoints(text)
+        .map((w) => nearestTrackKm(resampled.points, distances, w.lat, w.lon))
+        .filter(
+          (k): k is number => k !== null && k > 0.2 && k < totalKm - 0.2,
+        )
+        .map((k) => +k.toFixed(1)),
+    ),
+  ].sort((a, b) => a - b);
   return {
     distances,
     grades,
-    distanceKm: distances[distances.length - 1] / 1000,
+    distanceKm: totalKm,
     gainM: cumulativeGain(
       smoothed.map((p) => p.ele),
       D_PLUS_THRESHOLD_M,
@@ -134,6 +153,7 @@ function buildTrack(text: string): Track {
       km: distances[i] / 1000,
       ele: p.ele,
     })),
+    fileAidKms,
   };
 }
 
@@ -630,8 +650,25 @@ function GpxUpload({
     setError(null);
     textPromise
       .then((text) => {
-        setTrack(buildTrack(text));
+        const built = buildTrack(text);
+        setTrack(built);
         setExampleShown(exampleKey);
+        // Aid stations are course data: a new course either brings its own
+        // (file waypoints → auto-fill) or invalidates the previous entries.
+        // The first-visit auto-load is exempt so a shared link's stations
+        // (hash `rav`) survive landing on the example.
+        if (built.fileAidKms.length) {
+          setAidText(
+            built.fileAidKms
+              .map((k) =>
+                units === "imperial" ? +(k / KM_PER_MI).toFixed(1) : k,
+              )
+              .join(", "),
+          );
+          trackEvent("aid-autofill", { count: built.fileAidKms.length });
+        } else if (source !== "auto") {
+          setAidText("");
+        }
         trackEvent(
           {
             upload: "upload-gpx",

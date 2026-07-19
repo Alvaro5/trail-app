@@ -407,6 +407,23 @@
   Positions convert on the units toggle like the pace field, and travel in
   shared plan links (`rav` hash param, metric-canonical; smoke-tested).
 
+- **Aid stations auto-detected from GPX waypoints.** Investigated first:
+  the GPX spec has `<wpt>` for exactly this, but NONE of the project's 11
+  files carry any (Strava/Komoot route exports never do; RideWithGPS/
+  OpenRunner/LiveTrail files sometimes do) — so this is a bonus signal on
+  top of manual entry, not a replacement. Engine: `parseGpxWaypoints`
+  (never throws — waypoints are auxiliary) + `nearestTrackKm` projection
+  with a 200 m off-course rejection; both unit-tested. App: `buildTrack`
+  projects waypoints, drops start/finish markers (<200 m from either end),
+  and a course load pre-fills the ravitaillements field (still editable);
+  a course without waypoints clears stale entries, EXCEPT the first-visit
+  auto-load so hash-shared stations survive. Verified end-to-end with a
+  synthetic 4-waypoint file: the 2 real stations auto-filled with ETAs,
+  the départ marker and a 9 km-away parking waypoint were rejected. Known
+  limitation (documented in the engine): nearest-point projection can pick
+  the wrong passage on out-and-back courses — hence always-editable text.
+  `aid-autofill` analytics event.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

@@ -6,6 +6,8 @@ import {
   minettiCost,
   computeSplits,
   parseGpx,
+  parseGpxWaypoints,
+  nearestTrackKm,
   GpxError,
   actualSegmentTimes,
   movingTimeSec,
@@ -184,6 +186,42 @@ describe("timestamp capture (self-calibration input)", () => {
       ]),
     );
     expect(actualSegmentTimes(points)).toBeNull();
+  });
+});
+
+describe("waypoints (aid-station auto-fill)", () => {
+  it("parses <wpt> elements with and without names, skipping bad coords", () => {
+    const xml =
+      `<gpx><wpt lat="48.4" lon="2.6"><name> Ravito 1 </name></wpt>` +
+      `<wpt lat="48.41" lon="2.61"/>` +
+      `<wpt lat="oops" lon="2.6"><name>bad</name></wpt>` +
+      `<trk><trkseg><trkpt lat="48.4" lon="2.6"><ele>100</ele></trkpt>` +
+      `<trkpt lat="48.401" lon="2.6"><ele>110</ele></trkpt></trkseg></trk></gpx>`;
+    const wpts = parseGpxWaypoints(xml);
+    expect(wpts).toHaveLength(2);
+    expect(wpts[0]).toEqual({ lat: 48.4, lon: 2.6, name: "Ravito 1" });
+    expect(wpts[1].name).toBeNull();
+  });
+
+  it("returns [] on unparseable XML instead of throwing", () => {
+    expect(parseGpxWaypoints("not xml <<<")).toEqual([]);
+  });
+
+  it("projects a nearby waypoint onto the track and rejects far ones", () => {
+    // Straight northward track, ~111 m per point, ~1 km total.
+    const points: TrackPoint[] = Array.from({ length: 10 }, (_, i) => ({
+      lat: 48 + i * 0.001,
+      lon: 2.6,
+      ele: 100,
+    }));
+    const dists = cumulativeDistances(points);
+    // Waypoint ~30 m east of the halfway point → projects to ~mid-course.
+    const mid = nearestTrackKm(points, dists, 48.0045, 2.6004);
+    expect(mid).not.toBeNull();
+    expect(mid!).toBeGreaterThan(0.3);
+    expect(mid!).toBeLessThan(0.7);
+    // A waypoint kilometres away is not on the course.
+    expect(nearestTrackKm(points, dists, 48.0045, 2.7)).toBeNull();
   });
 });
 

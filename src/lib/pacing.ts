@@ -70,6 +70,51 @@ export function parseGpx(xml: string): TrackPoint[] {
   return points;
 }
 
+// Optional GPX waypoints (<wpt> — top-level POIs alongside the track). Race
+// organizers sometimes mark aid stations / checkpoints with them; most route
+// exports (Strava, Komoot) never include any, so callers must treat this as
+// a bonus signal, not a given. Never throws: waypoints are auxiliary, and a
+// malformed file already fails loudly in parseGpx.
+export type Waypoint = { lat: number; lon: number; name: string | null };
+
+export function parseGpxWaypoints(xml: string): Waypoint[] {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.querySelector("parsererror")) return [];
+  return Array.from(doc.querySelectorAll("wpt"))
+    .map((el) => ({
+      lat: Number(el.getAttribute("lat")),
+      lon: Number(el.getAttribute("lon")),
+      name: el.querySelector("name")?.textContent?.trim() || null,
+    }))
+    .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lon));
+}
+
+// Project a coordinate onto the track: cumulative km of the nearest track
+// point, or null when the coordinate is farther than `maxDistM` from the
+// course (start-village / parking markers shouldn't become aid stations).
+// Known limitation, inherent to nearest-point projection: on courses passing
+// the same spot twice (out-and-back, repeated loops through one aid station)
+// the wrong passage can win — which is why auto-filled positions stay
+// user-editable in the UI.
+export function nearestTrackKm(
+  points: TrackPoint[],
+  dists: number[],
+  lat: number,
+  lon: number,
+  maxDistM = 200,
+): number | null {
+  let bestIdx = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const d = haversine(points[i], { lat, lon, ele: 0 });
+    if (d < bestD) {
+      bestD = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx >= 0 && bestD <= maxDistM ? dists[bestIdx] / 1000 : null;
+}
+
 export function haversine(a: TrackPoint, b: TrackPoint): number {
   const R = 6371000; // Earth's mean radius in meters
   const toRad = (deg: number) => (deg * Math.PI) / 180;
