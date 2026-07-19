@@ -176,6 +176,23 @@ const en = {
   sheetEta: "ETA",
   sheetSplitsTitle: "Pacing table",
   sheetFooter: (host: string) => `Built with GradePace · ${host}`,
+  dwellLabel: "Stop time",
+  dwellHint:
+    "Minutes lost at each aid station (refill, food, queue). Added to every time after that station.",
+  startLabel: "Start",
+  startInvalid: "Enter a start time like 8:00 (24h).",
+  finishClock: (clock: string) => `finish ≈ ${clock}`,
+  cutoffLabel: "Cutoffs",
+  cutoffPlaceholder: "e.g. 5:30, 8:00",
+  cutoffHint:
+    "barrier times as elapsed race time (H:MM), one per station in course order",
+  cutoffMissLine: (station: string, arr: string, cutoff: string) =>
+    `${station}: projected arrival ${arr} is past the ${cutoff} cutoff.`,
+  cutoffRiskLine: (station: string, cutoff: string) =>
+    `${station}: the slow end of your range misses the ${cutoff} cutoff.`,
+  chipArrDep: (arr: string, dep: string) => `arrive ${arr}, leave ${dep}`,
+  sheetDepart: "depart",
+  sheetCutoff: "cutoff",
 };
 
 export type Messages = typeof en;
@@ -342,6 +359,23 @@ const fr: Messages = {
   sheetEta: "passage",
   sheetSplitsTitle: "Tableau d'allure",
   sheetFooter: (host: string) => `Créé avec GradePace · ${host}`,
+  dwellLabel: "Temps d'arrêt",
+  dwellHint:
+    "Minutes perdues à chaque ravitaillement (remplissage, nourriture, file). Ajoutées à tous les temps après ce ravito.",
+  startLabel: "Départ",
+  startInvalid: "Entrez une heure de départ comme 8:00 (24 h).",
+  finishClock: (clock: string) => `arrivée ≈ ${clock}`,
+  cutoffLabel: "Barrières",
+  cutoffPlaceholder: "ex. 5:30, 8:00",
+  cutoffHint:
+    "barrières horaires en temps de course écoulé (H:MM), une par ravito dans l'ordre du parcours",
+  cutoffMissLine: (station: string, arr: string, cutoff: string) =>
+    `${station} : arrivée estimée ${arr}, après la barrière de ${cutoff}.`,
+  cutoffRiskLine: (station: string, cutoff: string) =>
+    `${station} : le haut de votre fourchette dépasse la barrière de ${cutoff}.`,
+  chipArrDep: (arr: string, dep: string) => `arrivée ${arr}, départ ${dep}`,
+  sheetDepart: "départ",
+  sheetCutoff: "barrière",
 };
 
 export const MESSAGES: Record<Lang, Messages> = { en, fr };

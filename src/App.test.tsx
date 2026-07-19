@@ -72,7 +72,10 @@ describe("App smoke test", () => {
   });
 
   it("restores a shared plan from the URL hash", async () => {
-    window.location.hash = "#p=5:00&vam=900&gate=25&tf=1.10&u=metric&rav=5,12";
+    // Stations must sit INSIDE the ~2.2 km test course or they're filtered
+    // out (and the cutoff row only renders when stations exist).
+    window.location.hash =
+      "#p=5:00&vam=900&gate=25&tf=1.10&u=metric&rav=1,2&dw=6&st=8:30&co=1:00,2:00";
     try {
       const container = document.createElement("div");
       document.body.appendChild(container);
@@ -86,6 +89,9 @@ describe("App smoke test", () => {
       expect(text).toContain("×1.10");
       expect(text).toContain("900 m/h");
       expect(text).toContain("25%");
+      // First aria-invalid-capable input in DOM order is the pace field
+      // (the start-time input also carries aria-invalid now, but renders
+      // further down the page).
       const paceInput =
         container.querySelector<HTMLInputElement>("input[aria-invalid]");
       expect(paceInput?.value).toBe("5:00");
@@ -93,10 +99,56 @@ describe("App smoke test", () => {
       const aidInput = container.querySelector<HTMLInputElement>(
         'input[aria-label="Aid stations"]',
       );
-      expect(aidInput?.value).toBe("5, 12");
+      expect(aidInput?.value).toBe("1, 2");
+      // Logistics travel too: dwell minutes, start time, cutoffs.
+      expect(
+        container.querySelector<HTMLInputElement>(
+          'input[aria-label="Stop time"]',
+        )?.value,
+      ).toBe("6");
+      expect(
+        container.querySelector<HTMLInputElement>('input[aria-label="Start"]')
+          ?.value,
+      ).toBe("8:30");
+      expect(
+        container.querySelector<HTMLInputElement>(
+          'input[aria-label="Cutoffs"]',
+        )?.value,
+      ).toBe("1:00, 2:00");
+      // Start time set → wall-clock times appear on the aid chips
+      // (a few minutes into an 8:30 start → 08:xx).
+      expect(text).toMatch(/08:\d{2}/);
     } finally {
       window.location.hash = "";
     }
+  });
+
+  it("shifts the finish by dwell times the station count", async () => {
+    // Two stations at default 3 min dwell = +6 min vs the same plan with
+    // dwell 0. Compare the two rendered finish times.
+    const renderWithHash = async (hash: string) => {
+      window.location.hash = hash;
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      await act(async () => {
+        createRoot(container).render(<App />);
+      });
+      await flush();
+      window.location.hash = "";
+      return container;
+    };
+    const noDwell = await renderWithHash("#rav=1,2&dw=0");
+    const withDwell = await renderWithHash("#rav=1,2&dw=3");
+    const finishOf = (c: HTMLElement) => {
+      // The hero card value is the only H:MM:SS inside the stats grid.
+      const m = (c.textContent ?? "").match(/(\d+):(\d{2}):(\d{2})/);
+      if (!m) return null;
+      return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    };
+    const a = finishOf(noDwell);
+    const b = finishOf(withDwell);
+    expect(a).not.toBeNull();
+    expect(b! - a!).toBe(360);
   });
 
   it("renders the nutrition card with legs from the aid stations", async () => {

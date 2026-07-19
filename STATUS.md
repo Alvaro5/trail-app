@@ -579,6 +579,40 @@
     a friendly error. Verified in-browser on the Imperial plan (69 rows,
     FR). Analytics: `export-sheet`.
 
+- **Race logistics (roadmap batch 1): dwell, start time, cutoffs.**
+  New pure `src/lib/logistics.ts` (+18 tests), deliberately OUTSIDE the
+  engine: calibration models MOVING time (dwell threading through
+  computeSplits would mis-calibrate every fit), and the honest range scales
+  moving time only (dwell is a chosen constant ADDED after the band, never
+  multiplied).
+  - *Stop time*: minutes per aid station, **default 3 min (owner decision:
+    zero-dwell plans are systematically optimistic; the headline moves only
+    once stations are set** — the auto-loaded example has none, so the
+    landing number is unchanged). Folded into everything downstream:
+    arrivals (earlier stations only; strict `<`, arriving at a station
+    hasn't spent its own dwell), finish (+n×dwell), range endpoints, splits
+    elapsed (boundary epsilon so a station exactly on a km edge counts),
+    nutrition legs (partition on ADJUSTED arrivals; a leg includes the dwell
+    at its start station — intake at the R1 stop fuels the R1→R2 leg, and a
+    12 h day needs 12 h of fuel), share PNG, PDF sheet (depart column when
+    dwell > 0).
+  - *Start time* (optional "H:MM" 24h): every ETA gains a wall-clock twin —
+    chips, hero ("arrivée ≈ 15:44"), splits elapsed suffix, PDF. Wraps past
+    midnight; rounds to the nearest minute, matching fmtClockShort, so the
+    two forms can never disagree by one.
+  - *Cutoffs* (elapsed "H:MM" per station, course order; input appears only
+    once stations exist): rose chip + line when the central arrival misses
+    the barrier, amber when only the slow end of the range does. Honest
+    math: `slowArrive = movingPart × (rangeHigh/central) + dwellPart` — the
+    dwell constant is never scaled by the uncertainty ratio (unit-tested).
+  - *Hash*: `dw` (when ≠ 3), `st`, `co` (written only when every token is
+    valid — a partial list would silently shift the station↔cutoff pairing
+    for the recipient). Cutoffs are elapsed, hence unit-free.
+  - Verified live on Imperial (17/33/47 + 8:00 start + 2:00/4:00/5:00
+    cutoffs): finish 7:35:30 → 7:44:30 (+3×3 min), range 7:08 – 8:30,
+    R2 ≈ 3:39 (3:36 moving + R1 dwell), R3 rose at 5:18 vs 5:00, clocks
+    hand-checked. 105 tests total.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay
