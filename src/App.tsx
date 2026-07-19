@@ -60,6 +60,7 @@ import {
   parseStartTime,
   type CutoffStatus,
 } from "./lib/logistics";
+import { clearPlan, loadPlan, savePlan } from "./lib/persistence";
 import { MESSAGES, initialLang, type Lang, type Messages } from "./lib/i18n";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
@@ -466,32 +467,55 @@ function GpxUpload({
   const [error, setError] = useState<string | null>(null);
   // A shared-plan link overrides the defaults for every effort input below.
   const [hashPlan] = useState(readPlanFromHash);
+  // The last UPLOADED plan, restored from this device. Precedence for every
+  // setting is hash > saved > default: a shared link must show the sender's
+  // plan, otherwise a returning user gets their own back.
+  const [savedPlan] = useState(loadPlan);
+  // Whether the CURRENT course auto-saves (true after a real upload or a
+  // saved-plan restore; false on examples). State for the badge, ref for the
+  // load callback that flips it.
+  const [savedActive, setSavedActive] = useState(false);
+  const savedActiveRef = useRef(false);
+  const gpxTextRef = useRef<string | null>(null);
   const [units, setUnits] = useState<Units>(
-    () => hashPlan.units ?? initialUnits(),
+    () => hashPlan.units ?? savedPlan?.units ?? initialUnits(),
   );
   // A sensible easy default in the active unit (6:00/km ≈ 9:39/mi).
   const [paceText, setPaceText] = useState(
-    hashPlan.pace ?? (units === "imperial" ? "9:40" : "6:00"),
+    hashPlan.pace ??
+      savedPlan?.paceText ??
+      (units === "imperial" ? "9:40" : "6:00"),
   );
-  const [vam, setVam] = useState(hashPlan.vam ?? 750);
-  const [hikeAbovePct, setHikeAbovePct] = useState(hashPlan.gate ?? 18);
+  const [vam, setVam] = useState(hashPlan.vam ?? savedPlan?.vam ?? 750);
+  const [hikeAbovePct, setHikeAbovePct] = useState(
+    hashPlan.gate ?? savedPlan?.gatePct ?? 18,
+  );
   const [terrainFactor, setTerrainFactor] = useState(
-    hashPlan.tf ?? DEFAULT_TERRAIN_FACTOR,
+    hashPlan.tf ?? savedPlan?.terrainFactor ?? DEFAULT_TERRAIN_FACTOR,
   );
   // Nutrition rates (per hour). Like the effort inputs, a shared link can
   // carry them; otherwise the sports-science mid-band defaults apply.
   const [nutriRates, setNutriRates] = useState<NutritionRates>({
-    carbsGPerH: hashPlan.nc ?? DEFAULT_RATES.carbsGPerH,
-    fluidMlPerH: hashPlan.nfl ?? DEFAULT_RATES.fluidMlPerH,
-    sodiumMgPerH: hashPlan.ns ?? DEFAULT_RATES.sodiumMgPerH,
+    carbsGPerH:
+      hashPlan.nc ?? savedPlan?.carbsGPerH ?? DEFAULT_RATES.carbsGPerH,
+    fluidMlPerH:
+      hashPlan.nfl ?? savedPlan?.fluidMlPerH ?? DEFAULT_RATES.fluidMlPerH,
+    sodiumMgPerH:
+      hashPlan.ns ?? savedPlan?.sodiumMgPerH ?? DEFAULT_RATES.sodiumMgPerH,
   });
   // Race logistics: minutes per station, optional start time (wall-clock
   // display) and per-station cutoff barriers (elapsed H:MM, course order).
-  const [dwellMin, setDwellMin] = useState(hashPlan.dw ?? DWELL_DEFAULT_MIN);
-  const [startText, setStartText] = useState(hashPlan.st ?? "");
-  const [cutoffText, setCutoffText] = useState(hashPlan.co ?? "");
+  const [dwellMin, setDwellMin] = useState(
+    hashPlan.dw ?? savedPlan?.dwellMin ?? DWELL_DEFAULT_MIN,
+  );
+  const [startText, setStartText] = useState(
+    hashPlan.st ?? savedPlan?.startText ?? "",
+  );
+  const [cutoffText, setCutoffText] = useState(
+    hashPlan.co ?? savedPlan?.cutoffText ?? "",
+  );
   // Course name shown on the shareable image; prefilled on load, editable.
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(savedPlan?.title ?? "");
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   // The full table is ~70 rows for a 70k — collapsed by default so the page
@@ -578,9 +602,9 @@ function GpxUpload({
   // Aid stations ("ravitaillements") as free text in the ACTIVE unit —
   // "17, 33, 47". Parsed leniently every render; the hash stores metric km.
   const [aidText, setAidText] = useState(() => {
-    if (!hashPlan.rav?.length) return "";
+    if (!hashPlan.rav?.length) return savedPlan?.aidText ?? "";
     const vals =
-      (hashPlan.units ?? initialUnits()) === "imperial"
+      (hashPlan.units ?? savedPlan?.units ?? initialUnits()) === "imperial"
         ? hashPlan.rav.map((k) => +(k / KM_PER_MI).toFixed(1))
         : hashPlan.rav.map((k) => +k.toFixed(1));
     return vals.join(", ");
@@ -665,7 +689,11 @@ function GpxUpload({
   const calibId = useRef(0);
   // True while the terrain factor comes from a measured fit — narrows the
   // finish range. Manually touching the terrain slider makes it a guess again.
-  const [calibrated, setCalibrated] = useState(false);
+  // Restored with a saved plan (the measurement stands), but never from a
+  // hash link: the recipient didn't calibrate, so they get the wide band.
+  const [calibrated, setCalibrated] = useState(
+    hashPlan.tf === undefined && (savedPlan?.calibrated ?? false),
+  );
 
   // Pace text validates on every keystroke; while it's invalid (mid-edit or a
   // typo) the plan keeps using the last valid pace instead of silently
@@ -674,6 +702,8 @@ function GpxUpload({
   const [lastValidPaceSec, setLastValidPaceSec] = useState(() => {
     const fromHash = parsePace(hashPlan.pace ?? "");
     if (!Number.isNaN(fromHash)) return fromHash;
+    const fromSaved = parsePace(savedPlan?.paceText ?? "");
+    if (!Number.isNaN(fromSaved)) return fromSaved;
     return units === "imperial" ? 580 : 360;
   });
   const paceSec = parsePace(paceText);
@@ -856,7 +886,7 @@ function GpxUpload({
   function loadGpx(
     textPromise: Promise<string>,
     genericMsg: string,
-    source: "upload" | "example" | "auto",
+    source: "upload" | "example" | "auto" | "saved",
     exampleKey: ExampleKey | null,
   ) {
     setError(null);
@@ -865,6 +895,12 @@ function GpxUpload({
         const built = buildTrack(text);
         setTrack(built);
         setExampleShown(exampleKey);
+        // Persistence bookkeeping: uploads (and the restored plan itself)
+        // keep auto-saving; loading an example makes the session ephemeral
+        // again so the example never overwrites a real saved plan.
+        savedActiveRef.current = source === "upload" || source === "saved";
+        gpxTextRef.current = savedActiveRef.current ? text : null;
+        setSavedActive(savedActiveRef.current);
         // POIs belong to a course — a new course resets the overlay (and
         // cancels any fetch in flight) so stale pins can't linger.
         poiAbort.current?.abort();
@@ -874,8 +910,11 @@ function GpxUpload({
         // Aid stations are course data: a new course either brings its own
         // (file waypoints → auto-fill) or invalidates the previous entries.
         // The first-visit auto-load is exempt so a shared link's stations
-        // (hash `rav`) survive landing on the example.
-        if (built.fileAidKms.length) {
+        // (hash `rav`) survive landing on the example, and the saved restore
+        // keeps the user's own (possibly edited) station list.
+        if (source === "saved") {
+          /* aidText already restored from the saved plan */
+        } else if (built.fileAidKms.length) {
           setAidText(
             built.fileAidKms
               .map((k) =>
@@ -892,11 +931,21 @@ function GpxUpload({
             upload: "upload-gpx",
             example: "load-example",
             auto: "auto-example",
+            saved: "restore-saved",
           }[source],
           exampleKey ? { course: exampleKey } : undefined,
         );
       })
       .catch((err) => {
+        // A corrupt SAVED plan falls back to the example silently: the user
+        // didn't act, so no error banner, and the bad entry is dropped so it
+        // can't fail again next visit.
+        if (source === "saved") {
+          clearPlan();
+          loadExample("imperial", "auto");
+          console.error(err);
+          return;
+        }
         // Map known parse failures to friendly inline copy; anything else gets a
         // generic message so the upload never crashes the page.
         setTrack(null);
@@ -954,17 +1003,74 @@ function GpxUpload({
     );
   }
 
-  // First visit: open on the full dashboard (the example course) instead of an
-  // empty page — most visitors arrive from a link on a phone with no GPX file,
-  // so the example IS the demo. Ref-guarded so StrictMode's double-mount in dev
-  // doesn't fetch twice.
+  // First visit: open on the full dashboard instead of an empty page. A plan
+  // saved on this device wins over the bundled example (returning users get
+  // THEIR course back); most first-time visitors arrive from a link with no
+  // GPX, so the example is their demo. Ref-guarded so StrictMode's
+  // double-mount in dev doesn't fetch twice.
   const autoLoaded = useRef(false);
   useEffect(() => {
     if (autoLoaded.current) return;
     autoLoaded.current = true;
-    loadExample("imperial", "auto");
+    if (savedPlan) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-only initial data load
+      loadGpx(Promise.resolve(savedPlan.gpxText), t.errGeneric, "saved", null);
+    } else {
+      loadExample("imperial", "auto");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design
   }, []);
+
+  // Auto-save the active plan (course + every setting) whenever something
+  // changes, debounced so typing doesn't serialize a megabyte of GPX per
+  // keystroke. Only uploads/restores persist — never the examples.
+  useEffect(() => {
+    if (!savedActive || !gpxTextRef.current || !track) return;
+    const timer = setTimeout(() => {
+      savePlan({
+        v: 1,
+        savedAt: Date.now(),
+        gpxText: gpxTextRef.current!,
+        title,
+        units,
+        paceText,
+        vam,
+        gatePct: hikeAbovePct,
+        terrainFactor,
+        calibrated,
+        aidText,
+        dwellMin,
+        startText,
+        cutoffText,
+        carbsGPerH: nutriRates.carbsGPerH,
+        fluidMlPerH: nutriRates.fluidMlPerH,
+        sodiumMgPerH: nutriRates.sodiumMgPerH,
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [
+    savedActive,
+    track,
+    title,
+    units,
+    paceText,
+    vam,
+    hikeAbovePct,
+    terrainFactor,
+    calibrated,
+    aidText,
+    dwellMin,
+    startText,
+    cutoffText,
+    nutriRates,
+  ]);
+
+  // "Forget": drop the saved plan and start clean on the example.
+  function handleForgetSaved() {
+    clearPlan();
+    trackEvent("saved-reset");
+    window.location.replace(window.location.pathname);
+  }
 
   // Derive the plan from the parsed track + the effort inputs, so editing a
   // field recomputes without re-uploading. Cheap enough to run every render.
@@ -1443,6 +1549,25 @@ function GpxUpload({
                   ? t.exampleImperial
                   : t.exampleBosses}
               </span>
+            </div>
+          )}
+          {/* Persistence note for the user's own course: quiet, same
+              editorial register as the example badge. */}
+          {savedActive && !exampleShown && (
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-emerald-500">
+                {t.savedBadge}
+              </span>
+              <span className="text-zinc-400 light:text-zinc-600">
+                {t.savedNote}
+              </span>
+              <button
+                type="button"
+                onClick={handleForgetSaved}
+                className={`rounded text-zinc-500 underline decoration-zinc-600 underline-offset-2 transition-colors hover:text-zinc-200 light:decoration-zinc-400 light:hover:text-zinc-800 ${focusRing}`}
+              >
+                {t.savedForget}
+              </button>
             </div>
           )}
           <div className={cardClass}>

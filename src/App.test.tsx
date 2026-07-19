@@ -123,6 +123,82 @@ describe("App smoke test", () => {
     }
   });
 
+  it("restores a saved plan instead of the example, hash still winning", async () => {
+    // The env's localStorage global is non-functional; give the app a real
+    // in-memory one for this test.
+    const m = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, String(v)),
+      removeItem: (k: string) => void m.delete(k),
+      clear: () => m.clear(),
+    } as unknown as Storage);
+    const saved = {
+      v: 1,
+      savedAt: 1,
+      gpxText: EXAMPLE_GPX,
+      title: "My saved race",
+      units: "metric",
+      paceText: "5:45",
+      vam: 850,
+      gatePct: 22,
+      terrainFactor: 1.12,
+      calibrated: true,
+      aidText: "1",
+      dwellMin: 4,
+      startText: "7:30",
+      cutoffText: "",
+      carbsGPerH: 85,
+      fluidMlPerH: 550,
+      sodiumMgPerH: 500,
+    };
+    localStorage.setItem("gp-plan-v1", JSON.stringify(saved));
+    try {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      await act(async () => {
+        createRoot(container).render(<App />);
+      });
+      await flush();
+
+      const text = container.textContent ?? "";
+      // No example fetch: the saved course rendered instead.
+      expect(fetch).not.toHaveBeenCalled();
+      expect(text).not.toContain("Example");
+      expect(text).toContain("Saved");
+      expect(text).toContain("Forget this plan");
+      // Settings restored.
+      expect(
+        container.querySelector<HTMLInputElement>("input[aria-invalid]")
+          ?.value,
+      ).toBe("5:45");
+      expect(text).toContain("×1.12");
+      expect(text).toContain("850 m/h");
+      // Calibrated flag survived the restore (narrow band tag).
+      expect(text).toContain("calibrated");
+
+      // Hash overrides saved for the settings it carries.
+      localStorage.setItem("gp-plan-v1", JSON.stringify(saved));
+      window.location.hash = "#p=4:30&tf=1.00";
+      const c2 = document.createElement("div");
+      document.body.appendChild(c2);
+      await act(async () => {
+        createRoot(c2).render(<App />);
+      });
+      await flush();
+      window.location.hash = "";
+      expect(
+        c2.querySelector<HTMLInputElement>("input[aria-invalid]")?.value,
+      ).toBe("4:30");
+      expect(c2.textContent).toContain("×1.00");
+      // A hash terrain factor is a guess, not the saved measurement.
+      expect(c2.textContent).not.toContain("calibrated");
+    } finally {
+      vi.unstubAllGlobals();
+      window.location.hash = "";
+    }
+  });
+
   it("shifts the finish by dwell times the station count", async () => {
     // Two stations at default 3 min dwell = +6 min vs the same plan with
     // dwell 0. Compare the two rendered finish times.

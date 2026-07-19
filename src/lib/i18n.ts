@@ -193,6 +193,10 @@ const en = {
   chipArrDep: (arr: string, dep: string) => `arrive ${arr}, leave ${dep}`,
   sheetDepart: "depart",
   sheetCutoff: "cutoff",
+  savedBadge: "Saved",
+  savedNote:
+    "Your plan is stored on this device and restored on your next visit.",
+  savedForget: "Forget this plan",
 };
 
 export type Messages = typeof en;
@@ -376,6 +380,10 @@ const fr: Messages = {
   chipArrDep: (arr: string, dep: string) => `arrivée ${arr}, départ ${dep}`,
   sheetDepart: "départ",
   sheetCutoff: "barrière",
+  savedBadge: "Enregistré",
+  savedNote:
+    "Votre plan est conservé sur cet appareil et restauré à votre prochaine visite.",
+  savedForget: "Oublier ce plan",
 };
 
 export const MESSAGES: Record<Lang, Messages> = { en, fr };
