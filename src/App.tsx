@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // Recharts is ~500 kB — by far the heaviest dependency — so the chart loads as
 // its own async chunk and never blocks first paint.
@@ -1080,12 +1081,17 @@ function GpxUpload({
 
           {/* Fullscreen course-study view. Backdrop click or Escape closes.
               Fully opaque — a translucent backdrop reads as ghosting on big
-              bright displays. */}
-          {chartZoom && (
-            <div
-              className="animate-fade-in fixed inset-0 z-50 flex flex-col gap-3 bg-zinc-950 p-4 light:bg-zinc-50 sm:p-8"
-              onClick={() => setChartZoom(false)}
-            >
+              bright displays. Rendered through a PORTAL to <body>: the
+              dashboard's entrance animation gives it a transform, and a
+              transformed ancestor becomes the containing block for
+              position:fixed — without the portal the "fullscreen" overlay is
+              trapped inside the content column. */}
+          {chartZoom &&
+            createPortal(
+              <div
+                className="animate-fade-in fixed inset-0 z-50 flex flex-col gap-3 bg-zinc-950 p-4 light:bg-zinc-50 sm:p-8"
+                onClick={() => setChartZoom(false)}
+              >
               <div
                 className="flex items-center justify-between"
                 onClick={(e) => e.stopPropagation()}
@@ -1116,8 +1122,9 @@ function GpxUpload({
                 />
               </div>
               <div onClick={(e) => e.stopPropagation()}>{chartLegend}</div>
-            </div>
-          )}
+              </div>,
+              document.body,
+            )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label={t.statDistance} value={distStr(track.distanceKm)} />
