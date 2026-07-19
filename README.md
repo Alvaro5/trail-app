@@ -94,7 +94,7 @@ your actual *moving* time → a measured terrain factor, applied with one click.
 npm install
 npm run dev      # local dev server
 npm run build    # production build (also what CI runs)
-npm run test     # engine + app tests (Vitest, 105 tests)
+npm run test     # engine + app tests (Vitest, 86 tests)
 npm run lint
 ```
 
@@ -123,8 +123,6 @@ src/
                        endpoint race, client-side route-corridor filter.
   lib/nutrition.ts     Nutrition plan: hourly carb/fluid/sodium targets applied
                        to each projected segment between aid stations.
-  lib/logistics.ts     Race logistics: aid-station dwell time, wall-clock
-                       ETAs from a start time, cutoff-barrier warnings.
   lib/planSheet.ts     Printable race-day plan sheet for the PDF export.
   App.tsx              UI: upload, effort inputs, calibration, share, table.
   ElevationChart.tsx   Grade-colored profile (lazy-loaded Recharts chunk).

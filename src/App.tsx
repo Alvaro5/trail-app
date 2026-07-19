@@ -51,15 +51,6 @@ import {
   type NutritionRates,
 } from "./lib/nutrition";
 import { buildPlanSheetHtml, type SheetTable } from "./lib/planSheet";
-import {
-  adjustStops,
-  cutoffStatus,
-  dwellBefore,
-  fmtWallClock,
-  parseCutoffs,
-  parseStartTime,
-  type CutoffStatus,
-} from "./lib/logistics";
 import { MESSAGES, initialLang, type Lang, type Messages } from "./lib/i18n";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
@@ -264,18 +255,7 @@ type HashPlan = {
   nc?: number;
   nfl?: number;
   ns?: number;
-  // Race logistics: minutes per aid station, start time "HH:MM", cutoffs as
-  // elapsed "H:MM" list (unit-free, so no imperial conversion like `rav`).
-  dw?: number;
-  st?: string;
-  co?: string;
 };
-
-// Aid-station dwell. Default 3 min/station (owner decision, 2026-07): a plan
-// that teleports through ravitos is systematically optimistic, so the honest
-// default is non-zero. Moves times only once stations are set.
-const DWELL_DEFAULT_MIN = 3;
-const DWELL_MAX_MIN = 15;
 
 // Slider bounds for the nutrition rates, shared by the UI and the hash
 // validation so a crafted link can't smuggle absurd values.
@@ -315,23 +295,6 @@ function readPlanFromHash(): HashPlan {
     if (nfl >= FLUID_MIN && nfl <= FLUID_MAX) plan.nfl = Math.round(nfl);
     const ns = Number(p.get("ns"));
     if (ns >= SODIUM_MIN && ns <= SODIUM_MAX) plan.ns = Math.round(ns);
-    const dw = Number(p.get("dw"));
-    if (p.get("dw") !== null && dw >= 0 && dw <= DWELL_MAX_MIN)
-      plan.dw = Math.round(dw);
-    const st = p.get("st");
-    if (st && parseStartTime(st) !== null) plan.st = st;
-    const co = p.get("co");
-    if (co) {
-      const tokens = co.split(",").map((tk) => tk.trim());
-      // A link only carries cutoffs when every token was valid at write
-      // time; a tampered/partial list would silently shift the pairing.
-      if (
-        tokens.length &&
-        tokens.length <= 30 &&
-        tokens.every((tk) => /^\d{1,2}:[0-5]\d$/.test(tk))
-      )
-        plan.co = tokens.join(", ");
-    }
     return plan;
   } catch {
     return {}; // malformed hash → plain defaults, never a crash
@@ -485,11 +448,6 @@ function GpxUpload({
     fluidMlPerH: hashPlan.nfl ?? DEFAULT_RATES.fluidMlPerH,
     sodiumMgPerH: hashPlan.ns ?? DEFAULT_RATES.sodiumMgPerH,
   });
-  // Race logistics: minutes per station, optional start time (wall-clock
-  // display) and per-station cutoff barriers (elapsed H:MM, course order).
-  const [dwellMin, setDwellMin] = useState(hashPlan.dw ?? DWELL_DEFAULT_MIN);
-  const [startText, setStartText] = useState(hashPlan.st ?? "");
-  const [cutoffText, setCutoffText] = useState(hashPlan.co ?? "");
   // Course name shown on the shareable image; prefilled on load, editable.
   const [title, setTitle] = useState("");
   const [sharing, setSharing] = useState(false);
@@ -628,22 +586,6 @@ function GpxUpload({
       params.set("nfl", String(nutriRates.fluidMlPerH));
     if (nutriRates.sodiumMgPerH !== DEFAULT_RATES.sodiumMgPerH)
       params.set("ns", String(nutriRates.sodiumMgPerH));
-    // Logistics: dwell when customized, start when valid, cutoffs only when
-    // stations exist AND every token is valid (a partial list would shift
-    // the station↔cutoff pairing for the recipient).
-    if (dwellMin !== DWELL_DEFAULT_MIN) params.set("dw", String(dwellMin));
-    if (startText.trim() && parseStartTime(startText) !== null)
-      params.set("st", startText.trim());
-    const coTokens = cutoffText
-      .split(/[,;]+/)
-      .map((tk) => tk.trim())
-      .filter(Boolean);
-    if (
-      aidNums.length &&
-      coTokens.length &&
-      coTokens.every((tk) => /^\d{1,2}:[0-5]\d$/.test(tk))
-    )
-      params.set("co", coTokens.join(","));
     const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -1042,64 +984,10 @@ function GpxUpload({
     aidByBucket.set(idx, list);
   });
 
-  // Dwell-adjusted logistics. The engine and calibration stay on MOVING time
-  // (dwell threading through computeSplits would mis-calibrate every fit, and
-  // the honest range scales moving time only; dwell is a chosen constant
-  // ADDED after the band, never multiplied). See lib/logistics.ts.
-  const dwellSec = Math.max(0, dwellMin) * 60;
-  const adjStops = adjustStops(aidStops, dwellSec);
-  const totalDwellSec = aidStops.length * dwellSec;
-  const adjFinishSec = timeSec + totalDwellSec;
-  const adjRange = {
-    lowSec: range.lowSec + totalDwellSec,
-    highSec: range.highSec + totalDwellSec,
-  };
-  // Elapsed at the END of a table row must include the dwell of a station
-  // sitting exactly on the boundary — hence the epsilon past strict `<`.
-  const rowElapsed = (movingSec: number, endKmMetric: number) =>
-    movingSec + dwellBefore(aidKms, endKmMetric + 1e-6, dwellSec);
-  const rowEndKms = splits.reduce<number[]>((arr, s) => {
-    arr.push((arr.length ? arr[arr.length - 1] : 0) + s.distanceKm);
-    return arr;
-  }, []);
-  const rowAdjElapsed = splits.map((s, i) =>
-    rowElapsed(s.elapsedSec, rowEndKms[i]),
-  );
-  const startSec = parseStartTime(startText);
-  const startValid = startText.trim() === "" || startSec !== null;
-  const clockAt = (elapsed: number) =>
-    startSec === null ? null : fmtWallClock(startSec, elapsed);
-  // Cutoffs pair by index with the sorted stations; the range warning scales
-  // only the moving part of the arrival (see cutoffStatus).
-  const highRatio = timeSec > 0 ? range.highSec / timeSec : 1;
-  const cutoffSecs = parseCutoffs(cutoffText).slice(0, adjStops.length);
-  const stopStatus: CutoffStatus[] = adjStops.map((s, i) => {
-    const cutoff = cutoffSecs[i];
-    return cutoff == null
-      ? "ok"
-      : cutoffStatus(s.arriveSec, i * dwellSec, highRatio, cutoff);
-  });
-  const cutoffWarnings = adjStops.flatMap((s, i) => {
-    const cutoff = cutoffSecs[i];
-    if (cutoff == null || stopStatus[i] === "ok") return [];
-    const cutoffStr = `${fmtClockShort(cutoff)}${clockAt(cutoff) ? ` (${clockAt(cutoff)})` : ""}`;
-    return [
-      stopStatus[i] === "miss"
-        ? { kind: "miss" as const, text: t.cutoffMissLine(`R${i + 1}`, fmtClockShort(s.arriveSec), cutoffStr) }
-        : { kind: "risk" as const, text: t.cutoffRiskLine(`R${i + 1}`, cutoffStr) },
-    ];
-  });
-
-  // Nutrition plan: hourly targets × each leg's projected duration, on the
-  // DWELL-ADJUSTED clock (intake at the R1 stop fuels the R1→R2 leg, and a
-  // 12 h day needs 12 h of fuel). Cheap enough to derive every render.
+  // Nutrition plan: hourly targets × each leg's projected duration. Cheap
+  // enough to derive every render, so it always tracks the current plan.
   const nutrition = track
-    ? computeNutrition(
-        adjFinishSec,
-        track.distanceKm,
-        adjStops.map((s) => ({ km: s.km, eta: s.arriveSec })),
-        nutriRates,
-      )
+    ? computeNutrition(timeSec, track.distanceKm, aidStops, nutriRates)
     : null;
   // Leg endpoint names: Start → R1 → … → Finish.
   const legName = (i: number, last: number) =>
@@ -1127,10 +1015,9 @@ function GpxUpload({
         title: title.trim() || t.racePlan,
         distanceKm: track.distanceKm,
         gainM: track.gainM,
-        // Dwell-adjusted: the PNG must agree with the dashboard's headline.
-        timeSec: adjFinishSec,
-        rangeLowSec: adjRange.lowSec,
-        rangeHighSec: adjRange.highSec,
+        timeSec,
+        rangeLowSec: range.lowSec,
+        rangeHighSec: range.highSec,
         hikePct,
         avgPaceSecPerKm: totalKm > 0 ? timeSec / totalKm : 0,
         profile: track.profile,
@@ -1188,35 +1075,14 @@ function GpxUpload({
       color: g.color,
       label: legendLabel[g.label],
     }));
-    // Depart column only when dwell is set, cutoff column only when cutoffs
-    // exist; clock suffixes only when a start time is set.
-    const withClock = (sec: number) =>
-      clockAt(sec) ? ` (${clockAt(sec)})` : "";
-    const anyCutoff = cutoffSecs.some((c) => c != null);
-    const aidTable: SheetTable | null = adjStops.length
+    const aidTable: SheetTable | null = aidStops.length
       ? {
           title: t.aidLabel,
-          cols: [
-            t.aidLabel,
-            unitShort,
-            t.sheetEta,
-            ...(dwellSec > 0 ? [t.sheetDepart] : []),
-            ...(anyCutoff ? [t.sheetCutoff] : []),
-          ],
-          rows: adjStops.map((s, i) => [
+          cols: [t.aidLabel, unitShort, t.sheetEta],
+          rows: aidStops.map((s, i) => [
             `R${i + 1}`,
             (units === "imperial" ? s.km / KM_PER_MI : s.km).toFixed(1),
-            `≈ ${fmtClockShort(s.arriveSec)}${withClock(s.arriveSec)}`,
-            ...(dwellSec > 0
-              ? [`${fmtClockShort(s.departSec)}${withClock(s.departSec)}`]
-              : []),
-            ...(anyCutoff
-              ? [
-                  cutoffSecs[i] != null
-                    ? `${fmtClockShort(cutoffSecs[i]!)}${withClock(cutoffSecs[i]!)}`
-                    : "·",
-                ]
-              : []),
+            `≈ ${fmtClockShort(s.eta)}`,
           ]),
         }
       : null;
@@ -1256,21 +1122,21 @@ function GpxUpload({
     const splitsTable: SheetTable = {
       title: t.sheetSplitsTitle,
       cols: [unitShort, t.thGrade, t.thDplus, t.thHike, t.thPace, t.thElapsed],
-      rows: splits.map((s, i) => [
+      rows: splits.map((s) => [
         `${s.km}${aidByBucket.get(s.km)?.length ? `  ·  R${aidByBucket.get(s.km)!.join(", R")}` : ""}`,
         fmtGrade(s.grade),
         gainStr(s.gainM),
         s.hikeFraction > 0 ? `${(s.hikeFraction * 100).toFixed(0)}%` : "·",
         paceStr(s.paceSecPerKm),
-        `${fmtClock(rowAdjElapsed[i])}${withClock(rowAdjElapsed[i])}`,
+        fmtClock(s.elapsedSec),
       ]),
     };
     const html = buildPlanSheetHtml({
       lang,
       title: title.trim() || t.racePlan,
       finishLabel: t.statFinish,
-      finish: `${fmtClock(adjFinishSec)}${withClock(adjFinishSec)}`,
-      rangeLine: `${t.expect} ${fmtClockShort(adjRange.lowSec)} – ${fmtClockShort(adjRange.highSec)}${calibrated ? ` ${t.calibratedTag}` : ""}`,
+      finish: fmtClock(timeSec),
+      rangeLine: `${t.expect} ${fmtClockShort(range.lowSec)} – ${fmtClockShort(range.highSec)}${calibrated ? ` ${t.calibratedTag}` : ""}`,
       stats: [
         { label: t.statDistance, value: distStr(track.distanceKm) },
         { label: t.statGain, value: gainStr(track.gainM) },
@@ -1294,12 +1160,6 @@ function GpxUpload({
         },
         { label: t.gateLabel, value: `${hikeAbovePct}%` },
         { label: t.terrainLabel, value: `×${terrainFactor.toFixed(2)}` },
-        ...(aidStops.length && dwellSec > 0
-          ? [{ label: t.dwellLabel, value: `${dwellMin} min` }]
-          : []),
-        ...(startSec !== null
-          ? [{ label: t.startLabel, value: startText.trim() }]
-          : []),
       ],
       profile: track.profile,
       hikeAboveGrade: hikeAbovePct / 100,
@@ -1698,9 +1558,9 @@ function GpxUpload({
                 coords={track.coords}
                 grades={track.grades}
                 hikeAboveGrade={hikeAbovePct / 100}
-                aid={adjStops.map((s, i) => ({
+                aid={aidStops.map((s, i) => ({
                   km: s.km,
-                  label: `R${i + 1} · ${distStr(s.km)} · ≈ ${fmtClockShort(s.arriveSec)}${clockAt(s.arriveSec) ? ` · ${clockAt(s.arriveSec)}` : ""}`,
+                  label: `R${i + 1} · ${distStr(s.km)} · ≈ ${fmtClockShort(s.eta)}`,
                 }))}
                 startLabel={t.mapStart}
                 finishLabel={t.mapFinish}
@@ -1759,9 +1619,9 @@ function GpxUpload({
                       coords={track.coords}
                       grades={track.grades}
                       hikeAboveGrade={hikeAbovePct / 100}
-                      aid={adjStops.map((s, i) => ({
+                      aid={aidStops.map((s, i) => ({
                         km: s.km,
-                        label: `R${i + 1} · ${distStr(s.km)} · ≈ ${fmtClockShort(s.arriveSec)}${clockAt(s.arriveSec) ? ` · ${clockAt(s.arriveSec)}` : ""}`,
+                        label: `R${i + 1} · ${distStr(s.km)} · ≈ ${fmtClockShort(s.eta)}`,
                       }))}
                       startLabel={t.mapStart}
                       finishLabel={t.mapFinish}
@@ -1828,73 +1688,10 @@ function GpxUpload({
                 />
                 <span>{units === "imperial" ? "mi" : "km"}</span>
               </label>
-              {/* Minutes lost per station: folded into every downstream time
-                  (ETAs, finish, nutrition legs, PDF). Default 3 min (owner
-                  decision): zero-dwell plans are systematically optimistic. */}
-              <label
-                className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500"
-                title={t.dwellHint}
-              >
-                <span className="uppercase tracking-wider">{t.dwellLabel}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={DWELL_MAX_MIN}
-                  step={1}
-                  value={dwellMin}
-                  onChange={(e) =>
-                    setDwellMin(
-                      Math.min(
-                        DWELL_MAX_MIN,
-                        Math.max(0, Number(e.target.value) || 0),
-                      ),
-                    )
-                  }
-                  aria-label={t.dwellLabel}
-                  className="w-14 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm tabular-nums text-zinc-100 transition-colors focus:border-emerald-500 focus:outline-none light:border-zinc-300 light:bg-white light:text-zinc-900"
-                />
-                <span>min</span>
-              </label>
-              {/* Optional start time: turns every ETA into a wall-clock time
-                  (chips, table, PDF). Empty = feature off. */}
-              <label className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500">
-                <span className="uppercase tracking-wider">{t.startLabel}</span>
-                <input
-                  value={startText}
-                  onChange={(e) => setStartText(e.target.value)}
-                  placeholder="8:00"
-                  aria-label={t.startLabel}
-                  aria-invalid={!startValid}
-                  className={`w-16 rounded-md border bg-zinc-800 px-2 py-1 text-sm tabular-nums text-zinc-100 transition-colors focus:outline-none light:bg-white light:text-zinc-900 ${
-                    startValid
-                      ? "border-zinc-700 focus:border-emerald-500 light:border-zinc-300"
-                      : "border-rose-500 focus:border-rose-500"
-                  }`}
-                />
-              </label>
-              {!startValid && (
-                <span className="w-full text-xs text-rose-400 light:text-rose-600">
-                  {t.startInvalid}
-                </span>
-              )}
-              {adjStops.map((s, i) => (
+              {aidStops.map((s, i) => (
                 <span
                   key={s.km}
-                  title={
-                    dwellSec > 0
-                      ? t.chipArrDep(
-                          fmtClockShort(s.arriveSec),
-                          fmtClockShort(s.departSec),
-                        )
-                      : undefined
-                  }
-                  className={`rounded-md border px-2 py-1 text-xs tabular-nums ${
-                    stopStatus[i] === "miss"
-                      ? "border-rose-500/60 bg-rose-500/10 text-rose-300 light:text-rose-700"
-                      : stopStatus[i] === "risk"
-                        ? "border-amber-500/60 bg-amber-500/10 text-amber-300 light:text-amber-700"
-                        : "border-zinc-700 bg-zinc-800/60 text-zinc-300 light:border-zinc-300 light:bg-zinc-100 light:text-zinc-700"
-                  }`}
+                  className="rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-xs tabular-nums text-zinc-300 light:border-zinc-300 light:bg-zinc-100 light:text-zinc-700"
                 >
                   <span className="font-semibold text-emerald-400 light:text-emerald-600">
                     R{i + 1}
@@ -1902,44 +1699,9 @@ function GpxUpload({
                   {units === "imperial"
                     ? `${(s.km / KM_PER_MI).toFixed(1)} mi`
                     : `${s.km.toFixed(1)} km`}{" "}
-                  · ≈ {fmtClockShort(s.arriveSec)}
-                  {clockAt(s.arriveSec) && (
-                    <span className="text-zinc-500"> · {clockAt(s.arriveSec)}</span>
-                  )}
+                  · ≈ {fmtClockShort(s.eta)}
                 </span>
               ))}
-              {/* Cutoff barriers appear only once stations exist: elapsed
-                  H:MM per station in course order, warnings beneath. */}
-              {aidKms.length > 0 && (
-                <>
-                  <label className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500">
-                    <span className="uppercase tracking-wider">
-                      {t.cutoffLabel}
-                    </span>
-                    <input
-                      value={cutoffText}
-                      onChange={(e) => setCutoffText(e.target.value)}
-                      placeholder={t.cutoffPlaceholder}
-                      aria-label={t.cutoffLabel}
-                      title={t.cutoffHint}
-                      className="w-36 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm tabular-nums text-zinc-100 transition-colors focus:border-emerald-500 focus:outline-none light:border-zinc-300 light:bg-white light:text-zinc-900"
-                    />
-                  </label>
-                  {cutoffWarnings.map((w, i) => (
-                    <span
-                      key={i}
-                      role={w.kind === "miss" ? "alert" : undefined}
-                      className={`w-full text-xs ${
-                        w.kind === "miss"
-                          ? "text-rose-400 light:text-rose-600"
-                          : "text-amber-300 light:text-amber-700"
-                      }`}
-                    >
-                      {w.text}
-                    </span>
-                  ))}
-                </>
-              )}
             </div>
           </div>
 
@@ -2018,19 +1780,16 @@ function GpxUpload({
                 {t.statFinish}
               </div>
               <div className="mt-1 text-2xl font-semibold tabular-nums">
-                {fmtClock(adjFinishSec)}
+                {fmtClock(timeSec)}
               </div>
               <div className="mt-0.5 text-sm tabular-nums text-zinc-400 light:text-zinc-600">
-                {t.expect} {fmtClockShort(adjRange.lowSec)} –{" "}
-                {fmtClockShort(adjRange.highSec)}
+                {t.expect} {fmtClockShort(range.lowSec)} –{" "}
+                {fmtClockShort(range.highSec)}
                 {calibrated && (
                   <span className="text-emerald-400 light:text-emerald-600">
                     {" "}
                     {t.calibratedTag}
                   </span>
-                )}
-                {clockAt(adjFinishSec) && (
-                  <span> · {t.finishClock(clockAt(adjFinishSec)!)}</span>
                 )}
               </div>
             </div>
@@ -2269,7 +2028,7 @@ function GpxUpload({
                 </tr>
               </thead>
               <tbody>
-                {(showAllSplits ? splits : splits.slice(0, 12)).map((s, i) => (
+                {(showAllSplits ? splits : splits.slice(0, 12)).map((s) => (
                   <tr
                     key={s.km}
                     className="border-b border-zinc-800/70 tabular-nums text-zinc-200 transition-colors hover:bg-zinc-900/40 light:border-zinc-200 light:text-zinc-800 light:hover:bg-zinc-100"
@@ -2312,13 +2071,7 @@ function GpxUpload({
                       {paceStr(s.paceSecPerKm)}
                     </td>
                     <td className="py-1.5 text-right">
-                      {fmtClock(rowAdjElapsed[i])}
-                      {clockAt(rowAdjElapsed[i]) && (
-                        <span className="text-zinc-500">
-                          {" "}
-                          · {clockAt(rowAdjElapsed[i])}
-                        </span>
-                      )}
+                      {fmtClock(s.elapsedSec)}
                     </td>
                   </tr>
                 ))}
