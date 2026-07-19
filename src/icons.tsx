@@ -142,19 +142,58 @@ export const CheckIcon = ({ className = "h-4 w-4" }: IconProps) => (
   </svg>
 );
 
-// The brand mark — the same trend-line motif as the share card and favicon,
-// so the app header and every shared image read as one product.
-export const LogoMark = ({ className = "h-5 w-5" }: IconProps) => (
+export const FileIcon = ({ className = "h-4 w-4" }: IconProps) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
-    stroke="#34d399"
-    strokeWidth="2.5"
+    stroke="currentColor"
+    strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
     aria-hidden
   >
-    <path d="M4 17l4.5-8 4 3.5L20 5" />
+    <path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z" />
+    <path d="M14 3v4h4M9.5 12h5M9.5 16h5" />
+  </svg>
+);
+
+// The brand mark: a mountain profile drawn in the app's own grade colors —
+// emerald (runnable) into amber (climb) into rose (the steep push to the
+// summit) into sky (the descent). The same story the elevation chart tells,
+// compressed into one line. Mirrored in the favicon and the share card.
+export const LogoMark = ({ className = "h-5 w-5" }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+    <defs>
+      <linearGradient
+        id="gp-mark"
+        x1="3"
+        y1="0"
+        x2="21"
+        y2="0"
+        gradientUnits="userSpaceOnUse"
+      >
+        <stop offset="0" stopColor="#34d399" />
+        <stop offset="0.42" stopColor="#fbbf24" />
+        <stop offset="0.62" stopColor="#f43f5e" />
+        <stop offset="1" stopColor="#38bdf8" />
+      </linearGradient>
+      <linearGradient id="gp-mark-fill" x1="0" y1="4" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#34d399" stopOpacity="0.28" />
+        <stop offset="1" stopColor="#34d399" stopOpacity="0" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M3 18.5 L8 11 L10.5 13.5 L14.5 5.5 L21 18.5 Z"
+      fill="url(#gp-mark-fill)"
+      stroke="none"
+    />
+    <path
+      d="M3 18.5 L8 11 L10.5 13.5 L14.5 5.5 L21 18.5"
+      stroke="url(#gp-mark)"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 );

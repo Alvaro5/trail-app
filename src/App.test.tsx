@@ -109,9 +109,12 @@ describe("App smoke test", () => {
 
     const text = container.textContent ?? "";
     expect(text).toContain("Nutrition plan");
-    // No stations on the example → one Start → Finish leg + totals row.
+    // No stations on the example → a single Start → Finish segment, WITHOUT
+    // a totals row (it would duplicate the only row), plus the hint that
+    // adding aid stations breaks the table into segments.
     expect(text).toContain("Start → Finish");
-    expect(text).toContain("Total");
+    expect(text).not.toContain("Total");
+    expect(text).toContain("Add your aid stations");
     // Defaults visible on the sliders.
     expect(text).toContain("70 g/h");
     expect(text).toContain("500 ml/h");

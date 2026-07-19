@@ -159,15 +159,22 @@ export function buildShareCardSvg(d: ShareCardData): string {
     <linearGradient id="ele" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#34d399" stop-opacity="0.45"/>
       <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="8" y1="0" x2="45" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="0.42" stop-color="#fbbf24"/>
+      <stop offset="0.62" stop-color="#f43f5e"/>
+      <stop offset="1" stop-color="#38bdf8"/>
     </linearGradient>${gradeGradient}
   </defs>
 
   <rect width="${W}" height="${H}" fill="url(#bg)"/>
 
-  <!-- brand mark + wordmark -->
+  <!-- brand mark + wordmark: the grade-colored mountain line, same as the
+       app header and favicon -->
   <g transform="translate(80 60)">
     <rect width="52" height="52" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1"/>
-    <path d="M11 39 L20 22 L29 30 L44 11" fill="none" stroke="#34d399" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 40 L18.5 24 L24 29.5 L32 12 L45 40" fill="none" stroke="url(#mark)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="148" y="95" font-family="${FONT}" font-size="34" font-weight="700" fill="#fafafa">GradePace</text>
 

@@ -49,13 +49,77 @@ details[open]::details-content {
   height: auto;
 }
 
-/* Range sliders: keep the native accent look (progress fill included) but
-   give them a comfortable hit area, a pointer cursor, and a real focus ring. */
-input[type="range"] {
-  height: 1.15rem;
+/* Custom range sliders (.gp-range): a slim rounded track with an emerald
+   progress fill (the --fill variable is set inline by SliderField from the
+   current value) and a ringed white thumb that grows under the pointer.
+   Native accent-color can't deliver this consistently across browsers. */
+.gp-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.4rem;
+  background: transparent;
   cursor: pointer;
 }
-input[type="range"]:focus-visible {
+.gp-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #10b981 var(--fill, 50%),
+    #3f3f46 var(--fill, 50%)
+  );
+}
+.light .gp-range::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    #10b981 var(--fill, 50%),
+    #e4e4e7 var(--fill, 50%)
+  );
+}
+.gp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px; /* centers an 18px thumb on the 6px track */
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #10b981;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.gp-range:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.gp-range:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 6px rgb(16 185 129 / 0.15);
+}
+.gp-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #3f3f46;
+}
+.light .gp-range::-moz-range-track {
+  background: #e4e4e7;
+}
+.gp-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: #10b981;
+}
+.gp-range::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #10b981;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+.gp-range:focus-visible {
   outline: 2px solid rgb(16 185 129 / 0.6);
   outline-offset: 4px;
   border-radius: 9999px;
@@ -96,6 +160,9 @@ input[type="range"]:focus-visible {
     transition: none;
   }
   details::details-content {
+    transition: none;
+  }
+  .gp-range::-webkit-slider-thumb {
     transition: none;
   }
 }

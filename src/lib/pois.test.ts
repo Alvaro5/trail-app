@@ -30,8 +30,22 @@ const OVERPASS_FIXTURE = {
       tags: { amenity: "toilets", name: "WC de la Croix" },
     },
     { type: "node", lat: 48.403, lon: 2.6, tags: { tourism: "viewpoint" } },
+    { type: "node", lat: 48.404, lon: 2.6, tags: { amenity: "cafe" } },
+    { type: "node", lat: 48.405, lon: 2.6, tags: { natural: "spring" } },
+    { type: "node", lat: 48.406, lon: 2.6, tags: { amenity: "shelter" } },
+    // Areas come back as ways with a computed center, not lat/lon.
+    {
+      type: "way",
+      center: { lat: 48.407, lon: 2.6 },
+      tags: { amenity: "parking", name: "Parking de la Plaine" },
+    },
+    {
+      type: "way",
+      center: { lat: 48.408, lon: 2.6 },
+      tags: { tourism: "picnic_site" },
+    },
     // Untyped tags → dropped, never a crash.
-    { type: "node", lat: 48.404, lon: 2.6, tags: { shop: "bakery" } },
+    { type: "node", lat: 48.409, lon: 2.6, tags: { shop: "bakery" } },
     // Missing coordinates → dropped.
     { type: "node", tags: { amenity: "toilets" } },
   ],
@@ -53,30 +67,47 @@ describe("bboxOf / bboxAreaKm2", () => {
   });
 
   it("flags a continent-sized bbox as over the cap", () => {
-    expect(
-      bboxAreaKm2({ s: 43, w: -1, n: 49, e: 7 }),
-    ).toBeGreaterThan(MAX_BBOX_KM2);
+    expect(bboxAreaKm2({ s: 43, w: -1, n: 49, e: 7 })).toBeGreaterThan(
+      MAX_BBOX_KM2,
+    );
   });
 });
 
 describe("buildOverpassQuery", () => {
-  it("asks for exactly the three POI kinds within the bbox", () => {
+  it("asks for every POI kind via nwr with center output", () => {
     const q = buildOverpassQuery({ s: 48.4, w: 2.5, n: 48.5, e: 2.7 });
-    expect(q).toContain('"drinking_water"');
-    expect(q).toContain('"toilets"');
-    expect(q).toContain('"viewpoint"');
+    for (const sel of [
+      "drinking_water",
+      "toilets",
+      "viewpoint",
+      "cafe",
+      "spring",
+      "shelter",
+      "parking",
+      "picnic_site",
+    ])
+      expect(q).toContain(sel);
+    expect(q).toContain("nwr");
+    expect(q).toContain("out center");
     expect(q).toContain("48.40000,2.50000,48.50000,2.70000");
-    expect(q).toContain("[out:json]");
   });
 });
 
 describe("parseOverpassJson", () => {
-  it("types nodes by tag and keeps names, dropping junk", () => {
+  it("types nodes AND way-centers by tag, keeps names, drops junk", () => {
     const pois = parseOverpassJson(OVERPASS_FIXTURE);
-    expect(pois).toHaveLength(3);
-    expect(pois.map((p) => p.kind)).toEqual(["water", "toilets", "viewpoint"]);
+    expect(pois.map((p) => p.kind)).toEqual([
+      "water",
+      "toilets",
+      "viewpoint",
+      "cafe",
+      "spring",
+      "shelter",
+      "parking",
+      "picnic",
+    ]);
     expect(pois[1].name).toBe("WC de la Croix");
-    expect(pois[0].name).toBeUndefined();
+    expect(pois[6]).toMatchObject({ lat: 48.407, name: "Parking de la Plaine" });
   });
 
   it("returns empty on malformed payloads", () => {
@@ -99,27 +130,33 @@ describe("filterToCorridor", () => {
 describe("fetchPois", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("falls back to the next endpoint when the first fails, in order", async () => {
+  it("races endpoints in parallel and returns the first success", async () => {
     const calls: string[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
         calls.push(url);
-        if (calls.length === 1)
+        if (url.includes("slow")) {
+          // The overloaded primary: slow AND failing.
+          await new Promise((r) => setTimeout(r, 50));
           return { ok: false, status: 504, json: async () => ({}) };
+        }
         return { ok: true, json: async () => OVERPASS_FIXTURE };
       }),
     );
-    const pois = await fetchPois(
-      { s: 48.4, w: 2.5, n: 48.5, e: 2.7 },
-      undefined,
-      ["https://a.example/api", "https://b.example/api"],
-    );
-    expect(calls).toEqual(["https://a.example/api", "https://b.example/api"]);
-    expect(pois).toHaveLength(3);
+    const t0 = performance.now();
+    const pois = await fetchPois({ s: 48.4, w: 2.5, n: 48.5, e: 2.7 }, undefined, [
+      "https://slow.example/api",
+      "https://fast.example/api",
+    ]);
+    // Both fired immediately (parallel, not sequential)…
+    expect(calls).toHaveLength(2);
+    // …and the fast mirror's answer came back without waiting for the slow one.
+    expect(performance.now() - t0).toBeLessThan(45);
+    expect(pois.length).toBeGreaterThan(0);
   });
 
-  it("throws the last error when every endpoint fails", async () => {
+  it("rejects only when every endpoint fails", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -134,7 +171,7 @@ describe("fetchPois", () => {
     ).rejects.toThrow("network down");
   });
 
-  it("aborts immediately on the outer signal instead of trying mirrors", async () => {
+  it("reports an abort when the outer signal cancels the fetch", async () => {
     const ctl = new AbortController();
     vi.stubGlobal(
       "fetch",
@@ -149,6 +186,5 @@ describe("fetchPois", () => {
         "https://b.example/api",
       ]),
     ).rejects.toThrow(/aborted/);
-    expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
   });
 });

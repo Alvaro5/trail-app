@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<
             role="alert"
             className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 light:text-amber-800"
           >
-            Something went wrong rendering the page — sorry. Reloading usually
+            Something went wrong rendering the page, sorry. Reloading usually
             fixes it. If it keeps happening, ping{" "}
             <a
               href="https://x.com/AlvaroSerero"

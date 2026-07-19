@@ -534,6 +534,51 @@
   taller hit area, and a visible focus ring (kept native accent styling —
   full custom thumbs would lose the progress-fill look).
 
+- **Owner feedback round (2026-07-19), seven items in one sweep:**
+  - *Nutrition "leg" confusion + broken-looking single-row table.* Renamed
+    to "segment" (EN; FR keeps "tronçon"), the intro now defines it inline
+    ("the stretch between two aid stations"), the redundant Total row is
+    hidden when there's only one segment, and an emerald hint explains that
+    adding aid stations breaks the table into per-segment rows.
+  - *Sliders rebuilt* as fully custom controls (`.gp-range`): slim rounded
+    track, emerald progress fill driven by a CSS var set from the value
+    (native accent-color can't do this cross-browser), white ringed thumb
+    that scales on hover/press with a soft halo, Firefox pseudo-elements
+    included, focus ring kept, reduced-motion respected.
+  - *POI speed*: endpoints now RACE in parallel (Promise.any, losers
+    aborted) instead of failing over sequentially — the wait is the fastest
+    healthy mirror, not the sum of dead ones (the primary 504'd through the
+    whole build session; sequential cost 8-15 s before the first mirror was
+    even tried). Retry after an error resets to idle so re-toggling refetches.
+  - *More POI kinds* (Strava-inspired): cafés, springs, shelters, parking,
+    picnic sites join water/toilets/viewpoints — 8 kinds, hue-coded icons.
+    Query switched from node-only to `nwr` + `out center 600`, because
+    parking lots / toilet blocks / picnic sites are usually mapped as AREAS
+    (node-only silently missed them). Fontainebleau: 12 pins → 28.
+  - *Buttons*: primary/secondary get soft shadows + tuned hover/active;
+    "Show all splits" is now a centered pill with a rotating chevron and a
+    gradient fade over the last visible rows that signals "more below".
+  - *New brand mark*: the old generic trend-line read as AI slop (owner).
+    Now a mountain profile drawn in the app's own grade colors (emerald
+    runnable → amber climb → rose steep → sky descent) — the product's
+    core visual compressed into a line. Applied everywhere: header, favicon,
+    share card, og.png + apple-touch-icon (regenerated via gen-og.mjs).
+  - *Em dashes banned from all UI copy* (owner style rule, now noted in
+    i18n.ts header): every EN/FR string rewritten with periods/colons/
+    commas; index.html title+metas, ErrorBoundary, share title, and table
+    placeholders (— → ·) included. En dashes remain ONLY in numeric ranges
+    ("60–90 g/h", "6:59 – 8:21"), which is standard typography.
+  - *Race-day plan export* (`src/lib/planSheet.ts` + tests): "Export PDF"
+    in the share bar renders the ENTIRE plan as a self-contained printable
+    document in a new tab — brand header with the projected finish + range,
+    stat chips, settings line, grade-colored profile SVG with km gridlines
+    and R# aid markers, aid-station ETA table, nutrition table, and the
+    full pacing table — then hands it to the browser's print dialog (save
+    as PDF, or paper to tape to a bottle). Follows the active language;
+    print CSS repeats table headers across pages; pop-up-blocked case gets
+    a friendly error. Verified in-browser on the Imperial plan (69 rows,
+    FR). Analytics: `export-sheet`.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

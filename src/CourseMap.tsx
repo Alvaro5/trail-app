@@ -57,10 +57,44 @@ const finishIcon = () =>
     html: `<svg width="24" height="24" viewBox="0 0 24 24" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))"><rect x="1" y="1" width="22" height="22" rx="7" fill="#ffffff" stroke="#3f3f46" stroke-width="1.5"/><path d="M4 4h4v4H4zM12 4h4v4h-4zM8 8h4v4H8zM16 8h4v4h-4zM4 12h4v4H4zM12 12h4v4h-4zM8 16h4v4H8zM16 16h4v4h-4z" fill="#18181b"/></svg>`,
   });
 
+// One colored circle per kind, hue-coded so a glance separates "drink here"
+// from "photo here" from "crew parks here".
+const poiCircle = (fill: string, inner: string) =>
+  `<svg width="20" height="20" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45))"><circle cx="10" cy="10" r="9" fill="${fill}" stroke="#ffffff" stroke-width="1.5"/>${inner}</svg>`;
+
 const POI_ICON_HTML: Record<PoiKind, string> = {
-  water: `<svg width="20" height="20" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45))"><circle cx="10" cy="10" r="9" fill="#0ea5e9" stroke="#ffffff" stroke-width="1.5"/><path d="M10 4.6c1.9 2.5 3.4 4.4 3.4 6.1a3.4 3.4 0 1 1-6.8 0c0-1.7 1.5-3.6 3.4-6.1z" fill="#ffffff"/></svg>`,
-  toilets: `<svg width="20" height="20" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45))"><circle cx="10" cy="10" r="9" fill="#52525b" stroke="#ffffff" stroke-width="1.5"/><text x="10" y="13" text-anchor="middle" font-family="ui-sans-serif,system-ui" font-size="7.5" font-weight="700" fill="#ffffff">WC</text></svg>`,
-  viewpoint: `<svg width="20" height="20" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45))"><circle cx="10" cy="10" r="9" fill="#8b5cf6" stroke="#ffffff" stroke-width="1.5"/><ellipse cx="10" cy="10" rx="5.2" ry="3.4" fill="none" stroke="#ffffff" stroke-width="1.4"/><circle cx="10" cy="10" r="1.7" fill="#ffffff"/></svg>`,
+  water: poiCircle(
+    "#0ea5e9",
+    `<path d="M10 4.6c1.9 2.5 3.4 4.4 3.4 6.1a3.4 3.4 0 1 1-6.8 0c0-1.7 1.5-3.6 3.4-6.1z" fill="#ffffff"/>`,
+  ),
+  toilets: poiCircle(
+    "#52525b",
+    `<text x="10" y="13" text-anchor="middle" font-family="ui-sans-serif,system-ui" font-size="7.5" font-weight="700" fill="#ffffff">WC</text>`,
+  ),
+  viewpoint: poiCircle(
+    "#8b5cf6",
+    `<ellipse cx="10" cy="10" rx="5.2" ry="3.4" fill="none" stroke="#ffffff" stroke-width="1.4"/><circle cx="10" cy="10" r="1.7" fill="#ffffff"/>`,
+  ),
+  cafe: poiCircle(
+    "#d97706",
+    `<path d="M6 8h6v3a3 3 0 0 1-6 0z" fill="#ffffff"/><path d="M12 8.8h1.3a1.5 1.5 0 0 1 0 3H12" stroke="#ffffff" stroke-width="1.2" fill="none"/><path d="M6.5 14.5h6" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>`,
+  ),
+  spring: poiCircle(
+    "#14b8a6",
+    `<path d="M10 4.8c1.5 2 2.7 3.6 2.7 5a2.7 2.7 0 1 1-5.4 0c0-1.4 1.2-3 2.7-5z" fill="#ffffff"/><path d="M5.5 14.2c1.5 1 3 1 4.5 0s3-1 4.5 0" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>`,
+  ),
+  shelter: poiCircle(
+    "#a16207",
+    `<path d="M4.8 10.5 10 5.8l5.2 4.7" stroke="#ffffff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.8 9.5v5h6.4v-5" stroke="#ffffff" stroke-width="1.4" fill="none" stroke-linecap="round"/>`,
+  ),
+  parking: poiCircle(
+    "#3b82f6",
+    `<text x="10" y="14" text-anchor="middle" font-family="ui-sans-serif,system-ui" font-size="10.5" font-weight="800" fill="#ffffff">P</text>`,
+  ),
+  picnic: poiCircle(
+    "#65a30d",
+    `<path d="M4.8 8.2h10.4M8 8.2l-1.8 6M12 8.2l1.8 6M6.6 11.4h6.8" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>`,
+  ),
 };
 
 const poiIcon = (kind: PoiKind) =>

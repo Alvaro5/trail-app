@@ -50,6 +50,7 @@ import {
   DEFAULT_RATES,
   type NutritionRates,
 } from "./lib/nutrition";
+import { buildPlanSheetHtml, type SheetTable } from "./lib/planSheet";
 import { MESSAGES, initialLang, type Lang, type Messages } from "./lib/i18n";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
@@ -65,6 +66,7 @@ import {
   ImageIcon,
   LinkIcon,
   CheckIcon,
+  FileIcon,
   LogoMark,
 } from "./icons";
 
@@ -334,8 +336,8 @@ const heroCardClass =
   "rounded-xl border border-emerald-600/40 bg-zinc-900/50 p-4 light:border-emerald-500/40 light:bg-white";
 const inputClass =
   "w-28 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-100 tabular-nums transition-colors focus:border-emerald-500 focus:outline-none light:border-zinc-300 light:bg-white light:text-zinc-900";
-const btnPrimaryClass = `inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`;
-const btnSecondaryClass = `inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:border-emerald-500 hover:text-white active:scale-[0.98] light:border-zinc-300 light:bg-white light:text-zinc-700 light:hover:text-emerald-700 ${focusRing}`;
+const btnPrimaryClass = `inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-950/40 transition hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-900/40 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 light:shadow-emerald-600/20 ${focusRing}`;
+const btnSecondaryClass = `inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 shadow-sm shadow-black/20 transition hover:border-emerald-500 hover:bg-zinc-700/70 hover:text-white active:scale-[0.97] light:border-zinc-300 light:bg-white light:text-zinc-700 light:shadow-zinc-300/40 light:hover:text-emerald-700 ${focusRing}`;
 const alertClass =
   "rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200 light:text-amber-800";
 
@@ -387,6 +389,10 @@ function SliderField({
   step: number;
   onChange: (n: number) => void;
 }) {
+  // Drives the custom track's progress fill (see .gp-range in index.css) —
+  // native accent-color can't be styled cross-browser, so the fill point is
+  // handed to CSS as a variable.
+  const fillPct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
     <label className="flex w-full min-w-0 flex-col gap-1 text-sm">
       <span className="flex justify-between text-zinc-300 light:text-zinc-700">
@@ -402,7 +408,8 @@ function SliderField({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="accent-emerald-500"
+        className="gp-range"
+        style={{ "--fill": `${fillPct}%` } as React.CSSProperties}
       />
       {hint && <span className="text-xs text-zinc-500">{hint}</span>}
     </label>
@@ -1024,7 +1031,7 @@ function GpxUpload({
       });
       const shareData = {
         files: [file],
-        title: `${data.title} — GradePace`,
+        title: `${data.title} · GradePace`,
         text: t.shareText(data.title),
       };
       if (navigator.canShare?.(shareData)) {
@@ -1050,6 +1057,132 @@ function GpxUpload({
     } finally {
       setSharing(false);
     }
+  }
+
+  // Render the whole plan (stats, settings, profile, aid ETAs, nutrition,
+  // every split) as a printable sheet in a new tab; the browser's print
+  // dialog turns it into a PDF or paper for race day.
+  function handleExportSheet() {
+    if (!track || !splits.length) return;
+    const unitShort = units === "imperial" ? "mi" : "km";
+    const displayTotal =
+      units === "imperial" ? track.distanceKm / KM_PER_MI : track.distanceKm;
+    // A gridline every 10 display-units, skipping one within 4% of the end.
+    const ticks: { frac: number; label: string }[] = [];
+    for (let u = 10; u < displayTotal * 0.96; u += 10)
+      ticks.push({ frac: u / displayTotal, label: `${u}` });
+    const legendRow = GRADE_LEGEND.map((g) => ({
+      color: g.color,
+      label: legendLabel[g.label],
+    }));
+    const aidTable: SheetTable | null = aidStops.length
+      ? {
+          title: t.aidLabel,
+          cols: [t.aidLabel, unitShort, t.sheetEta],
+          rows: aidStops.map((s, i) => [
+            `R${i + 1}`,
+            (units === "imperial" ? s.km / KM_PER_MI : s.km).toFixed(1),
+            `≈ ${fmtClockShort(s.eta)}`,
+          ]),
+        }
+      : null;
+    const nutritionTable: SheetTable | null = nutrition?.legs.length
+      ? {
+          title: t.nutritionTitle,
+          cols: [
+            t.legLabel,
+            t.colDuration,
+            t.colCarbs,
+            t.colFluid,
+            t.colSodium,
+            t.colKcal,
+          ],
+          rows: nutrition.legs.map((leg, i) => [
+            `${legName(i, nutrition.legs.length - 1)} (${distStr(leg.toKm - leg.fromKm)})`,
+            fmtClockShort(leg.durationSec),
+            carbsStr(leg.carbsG),
+            fluidStr(leg.fluidMl),
+            sodiumStr(leg.sodiumMg),
+            String(Math.round(leg.kcal)),
+          ]),
+          totalRow:
+            nutrition.legs.length > 1
+              ? [
+                  t.nutritionTotal,
+                  fmtClockShort(nutrition.totals.durationSec),
+                  carbsStr(nutrition.totals.carbsG),
+                  fluidStr(nutrition.totals.fluidMl),
+                  sodiumStr(nutrition.totals.sodiumMg),
+                  String(Math.round(nutrition.totals.kcal)),
+                ]
+              : undefined,
+          notes: [t.gelsHint(Math.round(nutrition.gels)), t.nutritionDisclaimer],
+        }
+      : null;
+    const splitsTable: SheetTable = {
+      title: t.sheetSplitsTitle,
+      cols: [unitShort, t.thGrade, t.thDplus, t.thHike, t.thPace, t.thElapsed],
+      rows: splits.map((s) => [
+        `${s.km}${aidByBucket.get(s.km)?.length ? `  ·  R${aidByBucket.get(s.km)!.join(", R")}` : ""}`,
+        fmtGrade(s.grade),
+        gainStr(s.gainM),
+        s.hikeFraction > 0 ? `${(s.hikeFraction * 100).toFixed(0)}%` : "·",
+        paceStr(s.paceSecPerKm),
+        fmtClock(s.elapsedSec),
+      ]),
+    };
+    const html = buildPlanSheetHtml({
+      lang,
+      title: title.trim() || t.racePlan,
+      finishLabel: t.statFinish,
+      finish: fmtClock(timeSec),
+      rangeLine: `${t.expect} ${fmtClockShort(range.lowSec)} – ${fmtClockShort(range.highSec)}${calibrated ? ` ${t.calibratedTag}` : ""}`,
+      stats: [
+        { label: t.statDistance, value: distStr(track.distanceKm) },
+        { label: t.statGain, value: gainStr(track.gainM) },
+        {
+          label: t.statHike,
+          value: `${distStr(hikeMeters / 1000)} (${hikePct < 10 ? hikePct.toFixed(1) : hikePct.toFixed(0)}%)`,
+        },
+      ],
+      settingsTitle: t.sheetSettings,
+      settings: [
+        {
+          label: t.paceLabel,
+          value: `${fmtPace(effectivePaceSec)}/${unitShort === "mi" ? "mi" : "km"}`,
+        },
+        {
+          label: t.vamLabel,
+          value:
+            units === "imperial"
+              ? `${Math.round(vam * FT_PER_M)} ft/h`
+              : `${vam} m/h`,
+        },
+        { label: t.gateLabel, value: `${hikeAbovePct}%` },
+        { label: t.terrainLabel, value: `×${terrainFactor.toFixed(2)}` },
+      ],
+      profile: track.profile,
+      hikeAboveGrade: hikeAbovePct / 100,
+      ticks,
+      aidMarks: aidKms.map((km, i) => ({
+        frac: km / track.distanceKm,
+        label: `R${i + 1}`,
+      })),
+      legend: legendRow,
+      aidTable,
+      nutritionTable,
+      splitsTable,
+      footer: t.sheetFooter(window.location.host),
+    });
+    const w = window.open("", "_blank");
+    if (!w) {
+      setShareError(t.popupBlocked);
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    trackEvent("export-sheet");
   }
 
   const legendLabel: Record<string, string> = {
@@ -1094,6 +1227,11 @@ function GpxUpload({
         water: t.poiWater,
         toilets: t.poiToilets,
         viewpoint: t.poiViewpoint,
+        cafe: t.poiCafe,
+        spring: t.poiSpring,
+        shelter: t.poiShelter,
+        parking: t.poiParking,
+        picnic: t.poiPicnic,
       },
     }),
     [t],
@@ -1354,7 +1492,7 @@ function GpxUpload({
                           : "text-amber-300 light:text-amber-700"
                       }`}
                     >
-                      {factor !== null ? `×${factor.toFixed(2)}` : "—"}
+                      {factor !== null ? `×${factor.toFixed(2)}` : "·"}
                     </span>
                     <button
                       type="button"
@@ -1691,6 +1829,14 @@ function GpxUpload({
                 )}
                 {linkCopied ? t.copied : t.copyLink}
               </button>
+              <button
+                type="button"
+                onClick={handleExportSheet}
+                className={btnSecondaryClass}
+              >
+                <FileIcon />
+                {t.exportSheet}
+              </button>
             </div>
             {shareError && (
               <div role="alert" className={`mt-3 ${alertClass}`}>
@@ -1721,6 +1867,14 @@ function GpxUpload({
               <p className="mt-3 text-sm text-zinc-400 light:text-zinc-600">
                 {t.nutritionIntro}
               </p>
+              {/* One segment means no stations were set: say how to get the
+                  real per-segment breakdown instead of showing a one-row
+                  table that duplicates its own total. */}
+              {nutrition.legs.length === 1 && (
+                <p className="mt-2 text-sm text-emerald-400/90 light:text-emerald-700">
+                  {t.nutritionNoStations}
+                </p>
+              )}
               <div className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                 <SliderField
                   label={t.carbsLabel}
@@ -1812,24 +1966,28 @@ function GpxUpload({
                         </td>
                       </tr>
                     ))}
-                    <tr className="font-semibold tabular-nums text-zinc-100 light:text-zinc-900">
-                      <td className="py-2 pr-4">{t.nutritionTotal}</td>
-                      <td className="py-2 pr-4 text-right">
-                        {fmtClockShort(nutrition.totals.durationSec)}
-                      </td>
-                      <td className="py-2 pr-4 text-right">
-                        {carbsStr(nutrition.totals.carbsG)}
-                      </td>
-                      <td className="py-2 pr-4 text-right">
-                        {fluidStr(nutrition.totals.fluidMl)}
-                      </td>
-                      <td className="py-2 pr-4 text-right">
-                        {sodiumStr(nutrition.totals.sodiumMg)}
-                      </td>
-                      <td className="py-2 text-right">
-                        {Math.round(nutrition.totals.kcal)}
-                      </td>
-                    </tr>
+                    {/* With a single segment the totals row would repeat the
+                        row above it verbatim, which reads as a bug. */}
+                    {nutrition.legs.length > 1 && (
+                      <tr className="font-semibold tabular-nums text-zinc-100 light:text-zinc-900">
+                        <td className="py-2 pr-4">{t.nutritionTotal}</td>
+                        <td className="py-2 pr-4 text-right">
+                          {fmtClockShort(nutrition.totals.durationSec)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          {carbsStr(nutrition.totals.carbsG)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          {fluidStr(nutrition.totals.fluidMl)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          {sodiumStr(nutrition.totals.sodiumMg)}
+                        </td>
+                        <td className="py-2 text-right">
+                          {Math.round(nutrition.totals.kcal)}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1905,7 +2063,7 @@ function GpxUpload({
                         </span>
                       ) : (
                         <span className="text-zinc-600 light:text-zinc-400">
-                          —
+                          ·
                         </span>
                       )}
                     </td>
@@ -1920,13 +2078,23 @@ function GpxUpload({
               </tbody>
             </table>
             {splits.length > 12 && (
-              <button
-                type="button"
-                onClick={() => setShowAllSplits((v) => !v)}
-                className={`mt-3 w-full rounded-md border border-zinc-800 py-2 text-sm text-zinc-400 transition-colors hover:border-emerald-500 hover:text-zinc-200 light:border-zinc-200 light:text-zinc-500 light:hover:text-zinc-800 ${focusRing}`}
-              >
-                {showAllSplits ? t.showFewer : t.showAll(splits.length)}
-              </button>
+              <div className="relative">
+                {/* Fade over the last visible rows: says "there's more"
+                    before the eye even reaches the button. */}
+                {!showAllSplits && (
+                  <div className="pointer-events-none absolute -top-24 left-0 right-0 h-24 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent light:from-zinc-50 light:via-zinc-50/60" />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowAllSplits((v) => !v)}
+                  className={`relative mx-auto mt-3 flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-5 py-2 text-sm font-medium text-zinc-300 shadow-sm shadow-black/20 transition hover:border-emerald-500 hover:text-white active:scale-[0.97] light:border-zinc-300 light:bg-white light:text-zinc-600 light:shadow-zinc-300/40 light:hover:text-emerald-700 ${focusRing}`}
+                >
+                  <ChevronIcon
+                    className={`h-4 w-4 transition-transform ${showAllSplits ? "-rotate-90" : "rotate-90"}`}
+                  />
+                  {showAllSplits ? t.showFewer : t.showAll(splits.length)}
+                </button>
+              </div>
             )}
           </div>
         </div>

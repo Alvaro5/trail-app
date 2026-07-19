@@ -80,7 +80,9 @@ src/
   lib/pois.ts          Overpass POIs (water, toilets, viewpoints): bbox query,
                        endpoint fallback, client-side route-corridor filter.
   lib/nutrition.ts     Nutrition plan: hourly carb/fluid/sodium targets applied
-                       to each projected leg between aid stations.
+                       to each projected segment between aid stations.
+  lib/planSheet.ts     Printable race-day plan sheet (stats, profile, aid ETAs,
+                       nutrition, full pacing table) for the PDF export.
   App.tsx              UI: upload, effort inputs, calibration, share, table.
   ElevationChart.tsx   Grade-colored profile (lazy-loaded Recharts chunk).
   CourseMap.tsx        Map with the grade-colored route, aid stations, basemap
