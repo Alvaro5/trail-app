@@ -1509,6 +1509,8 @@ function GpxUpload({
         hybrid: t.mapLayerHybrid,
       },
       layersAria: t.mapLayersAria,
+      locateLabel: t.mapLocate,
+      locateError: t.mapLocateError,
       poiToggle: t.mapPoiToggle,
       poiHint: t.mapPoiHint,
       poiLoading: t.mapPoiLoading,

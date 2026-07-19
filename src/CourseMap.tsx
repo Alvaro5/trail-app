@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { gradeColor } from "./lib/gradeColor";
@@ -30,6 +30,8 @@ export type PoiState = {
 export type CourseMapLabels = {
   layers: Record<BasemapId, string>;
   layersAria: string;
+  locateLabel: string;
+  locateError: string;
   poiToggle: string;
   poiHint: string;
   poiLoading: string;
@@ -105,6 +107,16 @@ const poiIcon = (kind: PoiKind) =>
     html: POI_ICON_HTML[kind],
   });
 
+// Distance markers along the route (Strava-style): a numbered dark pill
+// every 5 display units (10 on very long courses).
+const kmIcon = (n: number) =>
+  L.divIcon({
+    className: "",
+    iconSize: [22, 16],
+    iconAnchor: [11, 8],
+    html: `<div style="background:#18181b;color:#fafafa;border:1.5px solid #ffffff;border-radius:9999px;min-width:22px;height:16px;padding:0 3px;display:flex;align-items:center;justify-content:center;font:600 9.5px ui-sans-serif,system-ui;box-shadow:0 1px 2px rgba(0,0,0,.4)">${n}</div>`,
+  });
+
 // Floating-control chip style, shared by the layer select and POI toggle —
 // matches the expand button the parent passes into topRightSlot.
 const chipClass =
@@ -156,7 +168,10 @@ export default function CourseMap({
   const routeRef = useRef<L.LayerGroup | null>(null);
   const aidRef = useRef<L.LayerGroup | null>(null);
   const poiRef = useRef<L.LayerGroup | null>(null);
+  const kmMarksRef = useRef<L.LayerGroup | null>(null);
+  const locateRef = useRef<L.LayerGroup | null>(null);
   const hoverRef = useRef<L.CircleMarker | null>(null);
+  const [locateMsg, setLocateMsg] = useState("");
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -178,6 +193,8 @@ export default function CourseMap({
       routeRef.current = null;
       aidRef.current = null;
       poiRef.current = null;
+      kmMarksRef.current = null;
+      locateRef.current = null;
       hoverRef.current = null;
     };
   }, []);
@@ -325,6 +342,71 @@ export default function CourseMap({
     }
   }, [poi, labels]);
 
+  // Distance markers every 5 display units (10 beyond 100 units), skipping
+  // ones that would crowd the finish flag.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || coords.length < 2) return;
+    kmMarksRef.current?.remove();
+    const group = L.layerGroup().addTo(map);
+    kmMarksRef.current = group;
+    const unitM = units === "imperial" ? 1609.344 : 1000;
+    const totalM = (coords.length - 1) * 10; // resample interval
+    const step = totalM / unitM > 100 ? 10 : 5;
+    for (let u = step; u * unitM < totalM - unitM * 0.3; u += step) {
+      const idx = Math.round((u * unitM) / 10);
+      if (idx <= 0 || idx >= coords.length) continue;
+      L.marker([coords[idx].lat, coords[idx].lon], {
+        icon: kmIcon(u),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 200,
+      }).addTo(group);
+    }
+  }, [coords, units]);
+
+  // On-demand geolocation for on-site course recon. Privacy: fires only on
+  // the button, position never leaves the device.
+  function handleLocate() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!("geolocation" in navigator)) {
+      setLocateMsg(labels?.locateError ?? "");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocateMsg("");
+        locateRef.current?.remove();
+        const g = L.layerGroup().addTo(map);
+        locateRef.current = g;
+        const ll: [number, number] = [
+          pos.coords.latitude,
+          pos.coords.longitude,
+        ];
+        L.circle(ll, {
+          radius: pos.coords.accuracy,
+          color: "#3b82f6",
+          weight: 1,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.12,
+          interactive: false,
+        }).addTo(g);
+        L.circleMarker(ll, {
+          radius: 7,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#3b82f6",
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(g);
+        map.flyTo(ll, Math.max(map.getZoom(), 14));
+      },
+      () => setLocateMsg(labels?.locateError ?? ""),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }
+
   // Hover mirror: register a marker-mover with the parent. One reusable
   // marker, moved rather than recreated — this runs at pointer-move
   // frequency, entirely outside React's render loop.
@@ -415,6 +497,34 @@ export default function CourseMap({
           >
             {poi?.status === "loading" ? labels.poiLoading : labels.poiToggle}
           </button>
+        )}
+        {labels && (
+          <button
+            type="button"
+            onClick={handleLocate}
+            title={labels.locateLabel}
+            aria-label={labels.locateLabel}
+            className={chipClass}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="h-3.5 w-3.5"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="7" />
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+              <path d="M12 2v3m0 14v3M2 12h3m14 0h3" />
+            </svg>
+          </button>
+        )}
+        {locateMsg && (
+          <span className="max-w-56 rounded-md border border-amber-500/40 bg-zinc-900/85 px-2.5 py-1 text-right text-xs text-amber-300 shadow-sm backdrop-blur light:bg-white/90 light:text-amber-700">
+            {locateMsg}
+          </span>
         )}
         {poiMessage && (
           <span className="max-w-56 rounded-md border border-amber-500/40 bg-zinc-900/85 px-2.5 py-1 text-right text-xs text-amber-300 shadow-sm backdrop-blur light:bg-white/90 light:text-amber-700">

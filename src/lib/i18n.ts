@@ -126,6 +126,8 @@ const en = {
   mapFinish: "Finish",
   mapAria: "Course map",
   mapLayersAria: "Map style",
+  mapLocate: "Show my position",
+  mapLocateError: "Position unavailable. Allow location access and retry.",
   mapLayerTerrain: "Terrain",
   mapLayerStandard: "Standard",
   mapLayerSatellite: "Satellite",
@@ -317,6 +319,9 @@ const fr: Messages = {
   mapFinish: "Arrivée",
   mapAria: "Carte du parcours",
   mapLayersAria: "Style de carte",
+  mapLocate: "Afficher ma position",
+  mapLocateError:
+    "Position indisponible. Autorisez la localisation et réessayez.",
   mapLayerTerrain: "Terrain",
   mapLayerStandard: "Standard",
   mapLayerSatellite: "Satellite",
