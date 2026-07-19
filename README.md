@@ -1,68 +1,110 @@
 # GradePace
 
-Grade-adjusted pacing plans for trail races — live at
-[gradepace.vercel.app](https://gradepace.vercel.app/).
+**Grade-adjusted pacing plans for trail races.** Upload a course GPX, get a
+per-kilometer plan that knows steep climbs are power-hikes, not runs, and an
+honest finish *range* instead of a false-precision single number. Everything
+runs in your browser. Your GPX never leaves your device.
+
+[![CI](https://github.com/Alvaro5/grade-pace/actions/workflows/ci.yml/badge.svg)](https://github.com/Alvaro5/grade-pace/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-10b981)](./LICENSE)
+[![Live demo](https://img.shields.io/badge/live-gradepace.vercel.app-10b981)](https://gradepace.vercel.app)
+[![Client-side only](https://img.shields.io/badge/backend-none-1f2937)](#how-it-works)
+
+### **[▸ Open the live app](https://gradepace.vercel.app)** &nbsp;·&nbsp; no signup, no upload, load an example and go
+
+<p align="center">
+  <a href="https://gradepace.vercel.app">
+    <img src="docs/screenshots/profile.png" width="840"
+         alt="Elevation profile of the Imperial Trail colored by what you will do on each section: blue descents, green runnable, amber climbs, rose power-hikes, with R1/R2/R3 aid stations and projected arrival times.">
+  </a>
+</p>
+
+---
+
+## Why GradePace
 
 Most pace planners assume you run every hill. On real trails, steep climbs are
-power-hikes. GradePace takes a course GPX (a recorded track *or* a route
-export) and produces a plan that admits this: per-km or per-mile splits with
-target pace, climb, and run/hike share, plus a projected finish shown as an
-honest **range**, not a false-precision single number. Everything runs in the
-browser — no backend, and your GPX never leaves your device.
+power-hikes, and pretending otherwise makes every plan wrong from the first big
+wall. GradePace is built around three ideas the mainstream tools skip:
 
-## What makes it different
+- **Power-hikes are planned, not ignored.** Above a transition grade (default
+  18%), iso-effort running is physically unavailable, so the plan switches to
+  hiking at a fixed vertical speed (VAM). The elevation profile is colored by
+  what you'll actually *do* — descent, runnable, climb, power-hike.
+- **Self-calibration instead of guessed knobs.** Upload a run you recorded and
+  GradePace inverts its own model against it: it *measures* your personal terrain
+  factor (with stopped time filtered out) rather than asking you to invent one.
+  Route exports with synthetic timestamps are detected and refused. This is the
+  moat — Strava has the data to self-calibrate and doesn't.
+- **Honest uncertainty.** Pre-race prediction can't beat day-of biology (sleep,
+  heat, and fueling swing a 70 km race by 20–40 min). The finish is shown as a
+  range — −8%/+10% uncalibrated, −5%/+7% once calibrated — with the model's
+  central estimate in the middle. Admitting uncertainty is more state of the art,
+  not less.
 
-- **Power-hikes are planned, not ignored.** Above a transition grade
-  (default 18%), iso-effort running is physically unavailable — the plan
-  switches to hiking at a fixed vertical speed (VAM). The elevation profile
-  is colored by what you'll *do* (descent / runnable / climb / power-hike).
-- **Self-calibration instead of guessed knobs.** Upload a run you recorded
-  and GradePace inverts its own model against it: it measures your personal
-  terrain factor (with stopped time filtered out) rather than asking you to
-  invent one. Route exports with synthetic timestamps are detected by a
-  plausibility band and refused.
-- **Honest uncertainty.** Pre-race prediction can't beat day-of biology
-  (sleep, heat, fueling swing a 70k by 20–40 min). The finish is a range —
-  −8%/+10% uncalibrated, −5%/+7% once calibrated — with the model's central
-  estimate in the middle.
+The [Minetti (2002)](https://doi.org/10.1152/japplphysiol.01177.2001) energy-cost
+model is the foundation; the calibration layer is the product.
+
+## See it
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/projection.png" alt="Stat cards: distance 68.75 km, elevation gain 1,193 m, power-hike 0.98 km, projected finish 7:35:30, expect 6:59 to 8:21."></td>
+    <td width="50%"><img src="docs/screenshots/map.png" alt="Course map on a topographic basemap with the route colored by grade, amber aid-station markers, and a checkered finish flag."></td>
+  </tr>
+  <tr>
+    <td>An <b>honest finish range</b>, not a single fake-precise number, plus distance, D+, and how much of the course you'll walk.</td>
+    <td>A <b>grade-colored course map</b> (terrain / satellite / hybrid basemaps) with aid stations and opt-in water/toilet/viewpoint POIs.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/nutrition.png" alt="Nutrition plan table with carbs, fluids, sodium, and calories for each segment between aid stations, plus totals."></td>
+    <td><img src="docs/screenshots/splits.png" alt="Per-kilometer splits table showing grade, D+, hike fraction, target pace, and elapsed time."></td>
+  </tr>
+  <tr>
+    <td>A <b>nutrition plan</b> that puts carbs, fluids, and sodium on each segment between aid stations, sized by projected time, not distance.</td>
+    <td><b>Per-km (or per-mile) splits</b>: target pace, climb, hike share, and elapsed time, all consistent with the projected finish.</td>
+  </tr>
+</table>
+
+You can share a plan as an image, a link that carries your settings, or a
+printable race-day PDF.
 
 ## How it works
 
-1. **Parse** — `<trkpt>` (or `<rtept>` fallback) → lat/lon/ele, optional
+1. **Parse** — `<trkpt>` (or `<rtept>` fallback) → lat/lon/ele, plus optional
    timestamps for the calibration path.
 2. **Distance** — cumulative Haversine.
-3. **Resample** — even 10 m stations (kills gradient spikes from
-   near-coincident GPS fixes).
+3. **Resample** — even 10 m stations (kills gradient spikes from near-coincident
+   GPS fixes).
 4. **Smooth** — centered moving average over a fixed 30 m *physical* window.
-5. **Gradient** — Δelevation / Δdistance per segment; D+ via a 5 m
-   hysteresis deadband (density-stable, noise-robust).
-6. **Cost → pace** — [Minetti (2002)](https://doi.org/10.1152/japplphysiol.01177.2001)
-   energy-cost polynomial (clamped to its validated ±45% range) scales your
-   flat pace; above the transition grade, segments hard-switch to
-   power-hiking at fixed VAM.
-7. **Plan** — aggregate into km or mile splits, project the finish, wrap it
-   in the uncertainty range.
+5. **Gradient** — Δelevation / Δdistance per segment; D+ via a 5 m hysteresis
+   deadband (density-stable, noise-robust).
+6. **Cost → pace** — the Minetti energy-cost polynomial (clamped to its validated
+   ±45% range) scales your flat pace; above the transition grade, segments
+   hard-switch to power-hiking at fixed VAM.
+7. **Plan** — aggregate into km or mile splits, project the finish, wrap it in the
+   uncertainty range.
 
-Calibration inverts the same forward model: predicted total (at terrain ×1.00)
-vs. your actual *moving* time → measured terrain factor, one click to apply.
+Calibration inverts the same forward model: predicted total (at terrain ×1.00) vs.
+your actual *moving* time → a measured terrain factor, applied with one click.
 
 ## Getting started
 
 ```sh
 npm install
 npm run dev      # local dev server
-npm run build    # production build
-npm run test     # engine + app tests (Vitest)
+npm run build    # production build (also what CI runs)
+npm run test     # engine + app tests (Vitest, 86 tests)
 npm run lint
 ```
 
 Useful scripts (run with `npx tsx` — the engine uses extensionless TS imports):
 
 ```sh
-npx tsx scripts/gen-og.mjs                     # regenerate og.png from the live share card
+npx tsx scripts/gen-og.mjs                              # regenerate og.png from the live share card
 npx tsx scripts/render-card-preview.mjs a.gpx out.png   # preview the share card for any course
-node scripts/calibrate-scan.ts efforts/*.gpx   # fit terrain factors across recorded runs
-node scripts/prior-scan.ts efforts/*.gpx       # course-signal vs factor analysis (negative result)
+node scripts/calibrate-scan.ts efforts/*.gpx            # fit terrain factors across recorded runs
+node scripts/prior-scan.ts efforts/*.gpx                # course-signal vs factor analysis (negative result)
 ```
 
 ## Project structure
@@ -75,22 +117,44 @@ src/
   lib/format.ts        Time/pace formatters shared by UI and share card.
   lib/shareCard.ts     Shareable plan image as a self-contained SVG.
   lib/rasterize.ts     SVG → PNG in the browser.
-  lib/gradeColor.ts    Shared grade→color scale (chart + share card).
+  lib/gradeColor.ts    Shared grade→color scale (chart + map + share card).
   lib/basemaps.ts      Basemap catalog: terrain / standard / satellite / hybrid.
   lib/pois.ts          Overpass POIs (water, toilets, viewpoints): bbox query,
-                       endpoint fallback, client-side route-corridor filter.
+                       endpoint race, client-side route-corridor filter.
   lib/nutrition.ts     Nutrition plan: hourly carb/fluid/sodium targets applied
                        to each projected segment between aid stations.
-  lib/planSheet.ts     Printable race-day plan sheet (stats, profile, aid ETAs,
-                       nutrition, full pacing table) for the PDF export.
+  lib/planSheet.ts     Printable race-day plan sheet for the PDF export.
   App.tsx              UI: upload, effort inputs, calibration, share, table.
   ElevationChart.tsx   Grade-colored profile (lazy-loaded Recharts chunk).
-  CourseMap.tsx        Map with the grade-colored route, aid stations, basemap
-                       switcher, scale bar, opt-in POI overlay (lazy Leaflet).
+  CourseMap.tsx        Map: grade-colored route, aid stations, basemap switcher,
+                       scale bar, opt-in POI overlay (lazy Leaflet).
   ErrorBoundary.tsx    Styled fallback instead of a white screen.
 ```
 
-## Status
+## Tech
 
-Active development. Current technical state and roadmap live in
+Vite + React 19 + TypeScript, Tailwind v4, Recharts, Leaflet, Vitest.
+Client-side only — no backend, no database, no auth. Deployed on Vercel,
+auto-deploy from `main`. The pure engine in `src/lib/pacing.ts` is the asset;
+its Minetti anchors, clamp, and split invariants are locked by tests.
+
+## Status & roadmap
+
+Active development. Current technical state, decisions, and roadmap live in
 [STATUS.md](./STATUS.md).
+
+## Contributing
+
+Issues and PRs welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md). The short
+version: keep the engine pure and tested, verify against reality (known race
+lengths, published D+, the Minetti paper), and prefer honest uncertainty over
+false precision.
+
+## License
+
+[MIT](./LICENSE) © Alvaro Serero
+
+---
+
+Built by [Alvaro Serero](https://x.com/AlvaroSerero) for his own race in the
+Fontainebleau forest. If GradePace helps you plan yours, a ⭐ is appreciated.
