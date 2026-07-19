@@ -453,6 +453,20 @@
     bail-out so pointer-moves don't thrash renders; the map moves ONE
     reusable non-interactive circleMarker rather than recreating layers.
 
+- **Hover-sync jank fix (owner feedback: chart tooltip stuttered).** Root
+  cause: the hover position was React state with a 50 m dead-band — on a
+  70 km course that's ~1 px of chart, so nearly every pointer-move
+  re-rendered the dashboard, rebuilt the chart's 7k-point data and restarted
+  the tooltip's slide animation. Fix: (1) the chart→map hover is now an
+  IMPERATIVE bridge — CourseMap registers its marker-mover (one reusable
+  circleMarker, setLatLng) and the chart calls it directly; React never
+  renders on hover. (2) Tooltip position animation off — it snaps to the
+  cursor. Verified via a temporary dev hook driving the bridge (km 10/50 →
+  correct marker moves, null → removed); the browser-automation session
+  stopped delivering hover events entirely mid-verification (even on the
+  previously-verified commit), so final smoothness feel is confirmed on
+  real hardware by the owner.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

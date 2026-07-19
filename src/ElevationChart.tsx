@@ -174,6 +174,7 @@ export default function ElevationChart({
           tickFormatter={(v: number) => `${Math.round(v)}${eleUnit}`}
         />
         <Tooltip
+          isAnimationActive={false}
           contentStyle={{
             background: dark ? "#18181b" : "#ffffff",
             border: `1px solid ${dark ? "#3f3f46" : "#d4d4d8"}`,

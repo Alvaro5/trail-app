@@ -20,7 +20,7 @@ export default function CourseMap({
   finishLabel = "Finish",
   ariaLabel = "Course map",
   heightClass = "h-72",
-  hoverKm = null,
+  onRegisterHover,
 }: {
   coords: { lat: number; lon: number }[]; // resampled track, 10 m spacing
   grades: number[]; // per-segment, parallel to coords (length n−1)
@@ -30,8 +30,10 @@ export default function CourseMap({
   finishLabel?: string;
   ariaLabel?: string;
   heightClass?: string; // "h-72" inline, "h-full" in the fullscreen view
-  // Course position hovered on the elevation profile — mirrored as a dot.
-  hoverKm?: number | null;
+  // Imperative hover bridge: the parent registers our marker-mover so the
+  // elevation chart can mirror its hovered position WITHOUT a React render
+  // per pointer-move (state-per-move made the chart tooltip stutter).
+  onRegisterHover?: (fn: ((kmMetric: number | null) => void) | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -144,34 +146,40 @@ export default function CourseMap({
     }
   }, [aid, coords]);
 
-  // Hover mirror: one reusable marker, moved rather than recreated — this
-  // updates at pointer-move frequency.
+  // Hover mirror: register a marker-mover with the parent. One reusable
+  // marker, moved rather than recreated — this runs at pointer-move
+  // frequency, entirely outside React's render loop.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || coords.length < 2) return;
-    if (hoverKm == null) {
-      hoverRef.current?.remove();
-      hoverRef.current = null;
-      return;
-    }
-    const idx = Math.min(
-      coords.length - 1,
-      Math.max(0, Math.round((hoverKm * 1000) / 10)),
-    );
-    const ll: [number, number] = [coords[idx].lat, coords[idx].lon];
-    if (!hoverRef.current) {
-      hoverRef.current = L.circleMarker(ll, {
-        radius: 6,
-        color: "#ffffff",
-        weight: 2,
-        fillColor: "#34d399",
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(map);
-    } else {
-      hoverRef.current.setLatLng(ll);
-    }
-  }, [hoverKm, coords]);
+    if (!onRegisterHover) return;
+    const move = (kmMetric: number | null) => {
+      const map = mapRef.current;
+      if (!map || coords.length < 2) return;
+      if (kmMetric == null) {
+        hoverRef.current?.remove();
+        hoverRef.current = null;
+        return;
+      }
+      const idx = Math.min(
+        coords.length - 1,
+        Math.max(0, Math.round((kmMetric * 1000) / 10)),
+      );
+      const ll: [number, number] = [coords[idx].lat, coords[idx].lon];
+      if (!hoverRef.current) {
+        hoverRef.current = L.circleMarker(ll, {
+          radius: 6,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#34d399",
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(map);
+      } else {
+        hoverRef.current.setLatLng(ll);
+      }
+    };
+    onRegisterHover(move);
+    return () => onRegisterHover(null);
+  }, [coords, onRegisterHover]);
 
   // `relative z-0` creates a stacking context: Leaflet's internal panes use
   // z-indexes in the hundreds and would otherwise paint OVER the fullscreen

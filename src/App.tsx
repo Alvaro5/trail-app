@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 // Recharts is ~500 kB — by far the heaviest dependency — so the chart loads as
@@ -391,16 +391,19 @@ function GpxUpload({
   // are the "actually study the course" modes.
   const [chartZoom, setChartZoom] = useState(false);
   const [mapZoom, setMapZoom] = useState(false);
-  // Course position hovered on the profile, mirrored as a dot on the map.
-  // Functional update + 50 m dead-band so pointer-moves don't thrash renders
-  // (React bails out when the value is unchanged).
-  const [hoverKm, setHoverKm] = useState<number | null>(null);
-  const onHoverKm = (km: number | null) =>
-    setHoverKm((prev) => {
-      if (km === null) return null;
-      if (prev !== null && Math.abs(prev - km) < 0.05) return prev;
-      return +km.toFixed(2);
-    });
+  // Chart→map hover bridge, deliberately IMPERATIVE: pointer-moves happen at
+  // 60+ Hz, and routing them through React state re-rendered the whole
+  // dashboard per move — which rebuilt the chart's data and made its tooltip
+  // stutter. The chart instead calls straight into the map's marker-mover;
+  // React never hears about a hover.
+  const hoverFnRef = useRef<((km: number | null) => void) | null>(null);
+  const onHoverKm = (km: number | null) => hoverFnRef.current?.(km);
+  const registerHoverTarget = useCallback(
+    (fn: ((km: number | null) => void) | null) => {
+      hoverFnRef.current = fn;
+    },
+    [],
+  );
   // Effort sliders: always visible on desktop (lg), toggled below that.
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // Aid stations ("ravitaillements") as free text in the ACTIVE unit —
@@ -1238,7 +1241,7 @@ function GpxUpload({
                 startLabel={t.mapStart}
                 finishLabel={t.mapFinish}
                 ariaLabel={t.mapAria}
-                hoverKm={hoverKm}
+                onRegisterHover={registerHoverTarget}
               />
             </Suspense>
             <button
