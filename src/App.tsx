@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 // Recharts is ~500 kB — by far the heaviest dependency — so the chart loads as
@@ -25,6 +33,18 @@ import {
 } from "./lib/pacing";
 import { fmtClock, fmtClockShort, fmtPace } from "./lib/format";
 import { GRADE_LEGEND } from "./lib/gradeColor";
+import { isBasemapId, type BasemapId } from "./lib/basemaps";
+import {
+  bboxAreaKm2,
+  bboxOf,
+  fetchPois,
+  filterToCorridor,
+  MAX_BBOX_KM2,
+  type Poi,
+} from "./lib/pois";
+// Type-only imports from the lazy chunk — erased at build time, so they
+// don't pull Leaflet into the main bundle.
+import type { CourseMapLabels, PoiState } from "./CourseMap";
 import { MESSAGES, initialLang, type Lang, type Messages } from "./lib/i18n";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
@@ -254,6 +274,16 @@ function readPlanFromHash(): HashPlan {
   }
 }
 
+function initialBasemap(): BasemapId {
+  try {
+    const saved = localStorage.getItem("gp-basemap");
+    if (isBasemapId(saved)) return saved;
+  } catch {
+    /* storage unavailable — terrain default */
+  }
+  return "terrain";
+}
+
 function initialUnits(): Units {
   // Storage can be absent or throw (private browsing, test envs) — the
   // preference is a nicety, never worth crashing over.
@@ -391,6 +421,64 @@ function GpxUpload({
   // are the "actually study the course" modes.
   const [chartZoom, setChartZoom] = useState(false);
   const [mapZoom, setMapZoom] = useState(false);
+  // Basemap preference is lifted here (not in CourseMap) because two map
+  // instances can be live at once — inline + fullscreen must stay in sync.
+  const [basemap, setBasemap] = useState<BasemapId>(initialBasemap);
+  // POI overlay (water/toilets/viewpoints from OpenStreetMap). Opt-in per
+  // session and deliberately NOT persisted: the app promises the GPX never
+  // leaves the device, so no request may fire without a fresh click — and
+  // even then only the course's bounding box is sent (see lib/pois.ts).
+  // Fetch state lives here too so toggling fullscreen never refetches.
+  const [poiOn, setPoiOn] = useState(false);
+  const [poiStatus, setPoiStatus] = useState<
+    "idle" | "loading" | "ok" | "error" | "too-big"
+  >("idle");
+  const [poiItems, setPoiItems] = useState<Poi[]>([]);
+  const poiAbort = useRef<AbortController | null>(null);
+
+  function switchBasemap(next: BasemapId) {
+    setBasemap(next);
+    try {
+      localStorage.setItem("gp-basemap", next);
+    } catch {
+      /* storage unavailable — the switch still works for this session */
+    }
+    trackEvent("switch-basemap", { to: next });
+  }
+
+  function togglePoi() {
+    if (poiOn) {
+      setPoiOn(false);
+      // Leaving an error state resets it, so the next toggle retries.
+      if (poiStatus === "error") setPoiStatus("idle");
+      return;
+    }
+    setPoiOn(true);
+    if (!track || poiStatus === "ok" || poiStatus === "loading") return;
+    const bbox = bboxOf(track.coords);
+    if (bboxAreaKm2(bbox) > MAX_BBOX_KM2) {
+      setPoiStatus("too-big");
+      return;
+    }
+    setPoiStatus("loading");
+    poiAbort.current?.abort();
+    const ctl = new AbortController();
+    poiAbort.current = ctl;
+    fetchPois(bbox, ctl.signal)
+      .then((items) => {
+        // The bbox of a loop encloses land the runner never crosses — keep
+        // only POIs within ~200 m of the actual route.
+        const near = filterToCorridor(items, track.coords);
+        setPoiItems(near);
+        setPoiStatus("ok");
+        trackEvent("poi-load", { found: near.length });
+      })
+      .catch((err) => {
+        if (ctl.signal.aborted) return; // toggled off / new course — not an error
+        console.error(err);
+        setPoiStatus("error");
+      });
+  }
   // Chart→map hover bridge, deliberately IMPERATIVE: pointer-moves happen at
   // 60+ Hz, and routing them through React state re-rendered the whole
   // dashboard per move — which rebuilt the chart's data and made its tooltip
@@ -673,6 +761,12 @@ function GpxUpload({
         const built = buildTrack(text);
         setTrack(built);
         setExampleShown(exampleKey);
+        // POIs belong to a course — a new course resets the overlay (and
+        // cancels any fetch in flight) so stale pins can't linger.
+        poiAbort.current?.abort();
+        setPoiOn(false);
+        setPoiStatus("idle");
+        setPoiItems([]);
         // Aid stations are course data: a new course either brings its own
         // (file waypoints → auto-fill) or invalidates the previous entries.
         // The first-visit auto-load is exempt so a shared link's stations
@@ -922,6 +1016,36 @@ function GpxUpload({
     </div>
   );
   const chartLabels = { elevation: t.elevationWord, powerHike: t.powerHikeWord };
+
+  // Memoized so CourseMap's effects (keyed on these props) don't re-run on
+  // every unrelated render of this component.
+  const mapLabels: CourseMapLabels = useMemo(
+    () => ({
+      layers: {
+        terrain: t.mapLayerTerrain,
+        standard: t.mapLayerStandard,
+        satellite: t.mapLayerSatellite,
+        hybrid: t.mapLayerHybrid,
+      },
+      layersAria: t.mapLayersAria,
+      poiToggle: t.mapPoiToggle,
+      poiHint: t.mapPoiHint,
+      poiLoading: t.mapPoiLoading,
+      poiError: t.mapPoiError,
+      poiTooBig: t.mapPoiTooBig,
+      poiEmpty: t.mapPoiEmpty,
+      poiKind: {
+        water: t.poiWater,
+        toilets: t.poiToilets,
+        viewpoint: t.poiViewpoint,
+      },
+    }),
+    [t],
+  );
+  const poi: PoiState | null = useMemo(
+    () => (poiOn ? { status: poiStatus, items: poiItems } : null),
+    [poiOn, poiStatus, poiItems],
+  );
 
   return (
     // The whole section is a drop target: dragging a GPX anywhere onto the
@@ -1228,7 +1352,7 @@ function GpxUpload({
           {/* Course map: same grade colors as the profile (rose = the plan
               walks), aid stations with their ETAs in tooltips. Lazy chunk —
               Leaflet + tiles load after the page is interactive. */}
-          <div className="relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2 light:border-zinc-200 light:bg-white">
+          <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2 light:border-zinc-200 light:bg-white">
             <Suspense fallback={<div className="h-72" />}>
               <CourseMap
                 coords={track.coords}
@@ -1241,17 +1365,25 @@ function GpxUpload({
                 startLabel={t.mapStart}
                 finishLabel={t.mapFinish}
                 ariaLabel={t.mapAria}
+                units={units}
+                basemap={basemap}
+                onBasemapChange={switchBasemap}
+                poi={poi}
+                onPoiToggle={togglePoi}
+                labels={mapLabels}
                 onRegisterHover={registerHoverTarget}
+                topRightSlot={
+                  <button
+                    type="button"
+                    onClick={() => setMapZoom(true)}
+                    className={`pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900/85 px-2.5 py-1 text-xs font-medium text-zinc-200 shadow-sm backdrop-blur transition-colors hover:border-emerald-500 hover:text-white light:border-zinc-300 light:bg-white/90 light:text-zinc-700 light:hover:text-emerald-700 ${focusRing}`}
+                  >
+                    <ExpandIcon className="h-3.5 w-3.5" />
+                    {t.expandChart}
+                  </button>
+                }
               />
             </Suspense>
-            <button
-              type="button"
-              onClick={() => setMapZoom(true)}
-              className={`absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900/90 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:border-emerald-500 hover:text-white light:border-zinc-300 light:bg-white/90 light:text-zinc-600 light:hover:text-emerald-700 ${focusRing}`}
-            >
-              <ExpandIcon className="h-3.5 w-3.5" />
-              {t.expandChart}
-            </button>
           </div>
 
           {/* Fullscreen map, same overlay pattern as the chart (portal to
@@ -1294,6 +1426,12 @@ function GpxUpload({
                       startLabel={t.mapStart}
                       finishLabel={t.mapFinish}
                       ariaLabel={t.mapAria}
+                      units={units}
+                      basemap={basemap}
+                      onBasemapChange={switchBasemap}
+                      poi={poi}
+                      onPoiToggle={togglePoi}
+                      labels={mapLabels}
                       heightClass="h-full"
                     />
                   </Suspense>

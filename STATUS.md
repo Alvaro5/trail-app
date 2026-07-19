@@ -467,6 +467,45 @@
   previously-verified commit), so final smoothness feel is confirmed on
   real hardware by the owner.
 
+- **Strava-grade map suite (owner request, Strava's map as the reference).**
+  - *Basemap switcher* — Terrain (OpenTopoMap, still the default) / Standard
+    (OSM) / Satellite (Esri World Imagery) / Hybrid (Esri imagery + Esri
+    Boundaries&Places labels), all keyless, config in `src/lib/basemaps.ts`.
+    Choice persists (`gp-basemap`) and is LIFTED to the dashboard so the
+    inline and fullscreen map instances stay in sync. Tile swap is its own
+    effect — route/aid/hover vectors never rebuild. Zoom ceiling follows the
+    active set (`setMaxZoom` — OpenTopo stops at 17, others 19; forgetting
+    this shows blank tiles). Attribution follows each layer automatically.
+  - *Scroll-wheel zoom only while hovering* the map (created with
+    `scrollWheelZoom:false`, enabled on map `mouseover`, disabled on
+    `mouseout`) — page scroll is safe, Strava behavior. Verified via the
+    dev-only `window.__gpMap` handle: enabled() flips false→true→false
+    around hover. (Synthetic wheel deltas couldn't move the zoom in the
+    automation session — Chrome suppresses animation frames in occluded
+    windows, so animated zooms stall; `setView(..., {animate:false})` worked
+    instantly. Real scrolls on visible hardware are fine.)
+  - *POI overlay* (drinking water / toilets / viewpoints from OpenStreetMap
+    via Overpass, `src/lib/pois.ts` + tests). OPT-IN per session and not
+    persisted — the app promises the GPX never leaves the device, so only a
+    padded bounding box is ever sent, never track points; corridor filtering
+    (≤200 m from the route, reusing haversine) runs client-side. Endpoint
+    fallback chain (overpass-api.de → private.coffee → maps.mail.ru) with
+    15 s per-endpoint timeouts — exercised live during verification: the
+    main endpoint 504'd and a mirror delivered. Bbox area guard (2500 km²)
+    refuses continent-sized queries with a friendly note. Fetch state lives
+    in the dashboard so toggling fullscreen never refetches; new course
+    aborts + resets. Fontainebleau bbox: 54 POIs → corridor-filtered pins.
+  - *Scale bar* (`L.control.scale`, bottom-left) in the active display unit.
+  - *Unmistakable start/finish*: divIcon inline-SVG markers — emerald ▶
+    start, checkered-flag finish — white ring + shadow, readable on all four
+    basemaps. On loop courses they stack at the same spot (finish on top).
+  - *On-map controls are React* (siblings of the Leaflet div inside a new
+    wrapper, `pointer-events-none` column with `pointer-events-auto` chips) —
+    no `L.Control`/DomEvent plumbing, i18n + light/dark for free. The inline
+    expand button moved into the map's control stack (`topRightSlot` prop).
+    Wrapper keeps the `relative z-0` stacking fix; the Leaflet div gets
+    explicit `z-0` so its internal panes flatten below the `z-10` chips.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

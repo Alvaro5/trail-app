@@ -122,6 +122,21 @@ const en = {
   mapStart: "Start",
   mapFinish: "Finish",
   mapAria: "Course map",
+  mapLayersAria: "Map style",
+  mapLayerTerrain: "Terrain",
+  mapLayerStandard: "Standard",
+  mapLayerSatellite: "Satellite",
+  mapLayerHybrid: "Hybrid",
+  mapPoiToggle: "Points of interest",
+  mapPoiHint:
+    "Water, toilets and viewpoints from OpenStreetMap — only the course area (a bounding box) is sent, never your track.",
+  mapPoiLoading: "Loading…",
+  mapPoiError: "Couldn't load points of interest — toggle again to retry.",
+  mapPoiTooBig: "Course area too large for points of interest.",
+  mapPoiEmpty: "No water, toilets or viewpoints mapped near this course.",
+  poiWater: "drinking water",
+  poiToilets: "toilets",
+  poiViewpoint: "viewpoint",
 };
 
 export type Messages = typeof en;
@@ -235,6 +250,23 @@ const fr: Messages = {
   mapStart: "Départ",
   mapFinish: "Arrivée",
   mapAria: "Carte du parcours",
+  mapLayersAria: "Style de carte",
+  mapLayerTerrain: "Terrain",
+  mapLayerStandard: "Standard",
+  mapLayerSatellite: "Satellite",
+  mapLayerHybrid: "Hybride",
+  mapPoiToggle: "Points d'intérêt",
+  mapPoiHint:
+    "Points d'eau, WC et points de vue depuis OpenStreetMap — seule la zone du parcours (un rectangle) est envoyée, jamais votre trace.",
+  mapPoiLoading: "Chargement…",
+  mapPoiError:
+    "Impossible de charger les points d'intérêt — réactivez pour réessayer.",
+  mapPoiTooBig: "Zone du parcours trop étendue pour les points d'intérêt.",
+  mapPoiEmpty:
+    "Aucun point d'eau, WC ou point de vue cartographié près de ce parcours.",
+  poiWater: "eau potable",
+  poiToilets: "toilettes",
+  poiViewpoint: "point de vue",
 };
 
 export const MESSAGES: Record<Lang, Messages> = { en, fr };

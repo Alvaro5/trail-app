@@ -76,10 +76,13 @@ src/
   lib/shareCard.ts     Shareable plan image as a self-contained SVG.
   lib/rasterize.ts     SVG → PNG in the browser.
   lib/gradeColor.ts    Shared grade→color scale (chart + share card).
+  lib/basemaps.ts      Basemap catalog: terrain / standard / satellite / hybrid.
+  lib/pois.ts          Overpass POIs (water, toilets, viewpoints): bbox query,
+                       endpoint fallback, client-side route-corridor filter.
   App.tsx              UI: upload, effort inputs, calibration, share, table.
   ElevationChart.tsx   Grade-colored profile (lazy-loaded Recharts chunk).
-  CourseMap.tsx        Topo map with the grade-colored route + aid stations
-                       (lazy-loaded Leaflet chunk, OpenTopoMap tiles).
+  CourseMap.tsx        Map with the grade-colored route, aid stations, basemap
+                       switcher, scale bar, opt-in POI overlay (lazy Leaflet).
   ErrorBoundary.tsx    Styled fallback instead of a white screen.
 ```
 
