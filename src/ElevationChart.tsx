@@ -17,9 +17,13 @@ import { gradeColor } from "./lib/gradeColor";
 export default function ElevationChart({
   profile,
   units = "metric",
+  hikeAboveGrade = 0.18,
 }: {
   profile: { km: number; ele: number }[];
   units?: "metric" | "imperial";
+  // The plan's run→hike transition grade. Rose on the chart means "the plan
+  // walks here", so it must track the actual setting, not a fixed steepness.
+  hikeAboveGrade?: number;
 }) {
   const imperial = units === "imperial";
   const eleUnit = imperial ? "ft" : "m";
@@ -28,36 +32,55 @@ export default function ElevationChart({
     ? profile[profile.length - 1].km - profile[0].km
     : 0;
 
-  // Grade at each point over a ±100 m window (metric profile, BEFORE unit
-  // conversion — ft/mi would skew the ratio). The window steadies the colors;
-  // per-10m grades flicker between bands.
-  const gradeAt = (i: number) => {
-    const w = 10; // samples ≈ ±100 m on the 10 m grid
+  // Grade at point i over a ±(w×10 m) window (metric profile, BEFORE unit
+  // conversion — ft/mi would skew the ratio).
+  const gradeAt = (i: number, w: number) => {
     const a = Math.max(0, i - w);
     const b = Math.min(profile.length - 1, i + w);
     const dKm = profile[b].km - profile[a].km;
     return dKm > 0 ? (profile[b].ele - profile[a].ele) / (dKm * 1000) : 0;
   };
 
-  // Convert the data itself (not just tick labels) so axis ticks land on
-  // round numbers in the displayed unit. Grade rides along for the tooltip.
-  const data = profile.map((p, i) => ({
-    km: imperial ? p.km / 1.609344 : p.km,
-    ele: imperial ? p.ele * 3.28084 : p.ele,
-    grade: gradeAt(i),
-  }));
+  // Two windows: a wide one (±100 m) keeps the effort colors from
+  // flickering, but it would smooth short steep walls below the hike gate —
+  // exactly the stretches worth marking. A tight ±30 m check catches those.
+  const data = profile.map((p, i) => {
+    const band = gradeAt(i, 10);
+    const hike = gradeAt(i, 3) >= hikeAboveGrade;
+    return {
+      km: imperial ? p.km / 1.609344 : p.km,
+      ele: imperial ? p.ele * 3.28084 : p.ele,
+      grade: band,
+      hike,
+    };
+  });
 
-  // Grade-colored stroke: a horizontal gradient with a stop per sampled point.
-  // ~150 stops keeps the SVG light even for a 7000-point resampled track.
-  const step = Math.max(1, Math.floor(profile.length / 150));
+  // Grade-colored stroke: a horizontal gradient, run-length encoded — a pair
+  // of stops per color CHANGE, not per sample. Uniform sampling missed the
+  // point of the feature: on a 70 km course a fixed ~150 samples lands every
+  // ~460 m, and Fontainebleau's power-hike walls are 30–100 m long, so the
+  // rose zones fell between samples and the chart showed no hiking at all.
+  // Scanning a 30 m grid and emitting stops only at transitions marks every
+  // wall while keeping the stop count low (bands change rarely).
   const stops: { off: number; color: string }[] = [];
   if (totalKm > 0) {
-    for (let i = 0; i < profile.length; i += step) {
-      stops.push({
-        off: (profile[i].km - profile[0].km) / totalKm,
-        color: gradeColor(data[i].grade),
-      });
+    const off = (i: number) => (profile[i].km - profile[0].km) / totalKm;
+    const colorAt = (i: number) =>
+      data[i].hike ? "#f43f5e" : gradeColor(data[i].grade, hikeAboveGrade);
+    let prev = "";
+    let prevI = 0;
+    for (let i = 0; i < profile.length; i += 3) {
+      const c = colorAt(i);
+      if (c !== prev) {
+        // Close the outgoing band at its true edge so colors switch crisply
+        // instead of smearing across the whole gap between stops.
+        if (prev) stops.push({ off: off(i - 1), color: prev });
+        stops.push({ off: off(i), color: c });
+        prev = c;
+      }
+      prevI = i;
     }
+    if (prev) stops.push({ off: off(prevI), color: prev });
   }
 
   return (
@@ -104,9 +127,13 @@ export default function ElevationChart({
           }}
           labelStyle={{ color: "#a1a1aa" }}
           formatter={(v, _name, item) => {
-            const g = (item?.payload as { grade?: number })?.grade ?? 0;
+            const p = item?.payload as { grade?: number; hike?: boolean };
+            const g = p?.grade ?? 0;
             const pct = `${g > 0 ? "+" : ""}${(g * 100).toFixed(0)}%`;
-            return [`${Math.round(Number(v))} ${eleUnit} · ${pct}`, "elevation"];
+            return [
+              `${Math.round(Number(v))} ${eleUnit} · ${pct}${p?.hike ? " · power-hike" : ""}`,
+              "elevation",
+            ];
           }}
           labelFormatter={(v) => `${distUnit} ${Number(v).toFixed(1)}`}
         />

@@ -20,6 +20,7 @@ import {
   type Split,
 } from "./lib/pacing";
 import { fmtClock, fmtClockShort, fmtPace } from "./lib/format";
+import { GRADE_LEGEND } from "./lib/gradeColor";
 // Aliased: `track` is taken by the parsed-GPX state variable in GpxUpload.
 import { track as trackEvent } from "./lib/analytics";
 import { buildShareCardSvg, type ShareCardData } from "./lib/shareCard";
@@ -495,6 +496,16 @@ function GpxUpload() {
   const timeSec = splits.length ? splits[splits.length - 1].elapsedSec : 0;
   // Honest range around the central estimate; calibration narrows the band.
   const range = finishRange(timeSec, calibrated);
+  // How much of the course the plan walks — the header's whole promise, so it
+  // gets its own stat card (and feeds the share image).
+  const hikeMeters = splits.reduce(
+    (sum, s) => sum + s.hikeFraction * s.distanceKm * 1000,
+    0,
+  );
+  const hikePct =
+    track && track.distanceKm > 0
+      ? (hikeMeters / (track.distanceKm * 1000)) * 100
+      : 0;
 
   // Render the current plan to a branded PNG and share it (native share sheet
   // when available, e.g. mobile) or download it. Every shared card carries the
@@ -505,10 +516,6 @@ function GpxUpload() {
     setShareError(null);
     try {
       const totalKm = track.distanceKm;
-      const hikeMeters = splits.reduce(
-        (sum, s) => sum + s.hikeFraction * s.distanceKm * 1000,
-        0,
-      );
       const data: ShareCardData = {
         title: title.trim() || "Race plan",
         distanceKm: track.distanceKm,
@@ -516,11 +523,12 @@ function GpxUpload() {
         timeSec,
         rangeLowSec: range.lowSec,
         rangeHighSec: range.highSec,
-        hikePct: totalKm > 0 ? (hikeMeters / (totalKm * 1000)) * 100 : 0,
+        hikePct,
         avgPaceSecPerKm: totalKm > 0 ? timeSec / totalKm : 0,
         profile: track.profile,
         siteUrl: window.location.host,
         units,
+        hikeAboveGrade: hikeAbovePct / 100,
       };
       const blob = await svgToPng(buildShareCardSvg(data), 1200, 630);
       const file = new File([blob], "gradepace-plan.png", {
@@ -776,13 +784,44 @@ function GpxUpload() {
             {/* Fixed-height fallback so the layout doesn't jump when the
                 chart chunk arrives. */}
             <Suspense fallback={<div className="h-40" />}>
-              <ElevationChart profile={track.profile} units={units} />
+              <ElevationChart
+                profile={track.profile}
+                units={units}
+                hikeAboveGrade={hikeAbovePct / 100}
+              />
             </Suspense>
+            {/* Names the colors — "power-hike" appears right where you look
+                for it, on the profile itself. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+              {GRADE_LEGEND.map((g) => (
+                <span key={g.label} className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ background: g.color }}
+                  />
+                  {g.label}
+                </span>
+              ))}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Distance" value={distStr(track.distanceKm)} />
             <StatCard label="Elevation gain" value={gainStr(track.gainM)} />
+            {/* The header's promise, quantified: how much of this course the
+                plan walks instead of pretending you'll run it. */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-xs uppercase tracking-wider text-zinc-400">
+                Power-hike
+              </div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                {distStr(hikeMeters / 1000)}
+              </div>
+              <div className="mt-0.5 text-sm tabular-nums text-zinc-400">
+                {hikePct < 10 ? hikePct.toFixed(1) : hikePct.toFixed(0)}% of
+                the course walked
+              </div>
+            </div>
             {/* The range IS the product thesis: a to-the-second finish would
                 be false precision. Center = the model's central estimate. */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">

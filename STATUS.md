@@ -269,6 +269,20 @@
   sharp without a browser — kept as a dev harness). Also: aria-labels on both
   file inputs.
 
+- **Power-hike made visible (owner feedback: the header promises it, the app
+  barely showed it).** Three changes, one idea:
+  1. Chart rose = "the plan walks here": the rose band is now driven by the
+     ACTUAL hike gate (prop from the slider), not a fixed 15%; a tight ±30 m
+     check overrides the ±100 m band smoothing so short walls get marked; the
+     tooltip appends "· power-hike". Gradient stops are now run-length
+     encoded on a 30 m grid (stops at color TRANSITIONS) — uniform ~460 m
+     sampling was skipping right over Fontainebleau's 30–100 m hike walls,
+     so the feature was invisible on the exact course that motivated it.
+  2. Legend under the chart (descent / runnable / climb / power-hike), from a
+     shared `GRADE_LEGEND` next to the color scale so they can't drift.
+  3. Fourth stat card: "Power-hike — X mi/km · N% of the course walked."
+     Share card takes the gate too (`hikeAboveGrade`).
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

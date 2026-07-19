@@ -23,6 +23,7 @@ export type ShareCardData = {
   profile: { km: number; ele: number }[];
   siteUrl: string;
   units?: "metric" | "imperial"; // display units; data stays metric. Default metric.
+  hikeAboveGrade?: number; // the plan's hike gate — rose on the profile means "walk here"
 };
 
 const KM_PER_MI = 1.609344;
@@ -66,7 +67,10 @@ function sample<T>(arr: T[], n: number): T[] {
 // plus grade-colored gradient stops for the stroke (same scale as the on-page
 // chart via gradeColor). Degenerate profiles (0 or 1 point, flat elevation)
 // collapse to a midline with no stops — callers fall back to a solid stroke.
-function profilePaths(profile: { km: number; ele: number }[]): {
+function profilePaths(
+  profile: { km: number; ele: number }[],
+  hikeGate: number,
+): {
   line: string;
   area: string;
   stops: { off: number; color: string }[];
@@ -104,13 +108,16 @@ function profilePaths(profile: { km: number; ele: number }[]): {
     const a = b === i ? i - 1 : i;
     const dKm = pts[b].km - pts[a].km;
     const g = dKm > 0 ? (pts[b].ele - pts[a].ele) / (dKm * 1000) : 0;
-    return { off: (p.km - kmMin) / kmSpan, color: gradeColor(g) };
+    return { off: (p.km - kmMin) / kmSpan, color: gradeColor(g, hikeGate) };
   });
   return { line, area, stops };
 }
 
 export function buildShareCardSvg(d: ShareCardData): string {
-  const { line, area, stops } = profilePaths(d.profile);
+  const { line, area, stops } = profilePaths(
+    d.profile,
+    d.hikeAboveGrade ?? 0.18,
+  );
   // Degenerate profiles have no stops — a gradient with none renders an
   // invisible stroke, so fall back to solid emerald.
   const strokePaint = stops.length >= 2 ? "url(#gline)" : "#34d399";
