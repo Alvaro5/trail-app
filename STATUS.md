@@ -283,6 +283,20 @@
   3. Fourth stat card: "Power-hike — X mi/km · N% of the course walked."
      Share card takes the gate too (`hikeAboveGrade`).
 
+- **Shareable plan links.** "Copy link" (next to Share image) encodes the
+  effort inputs in the URL hash (`#p=6:00&vam=750&gate=18&tf=1.08&u=metric`);
+  on load the hash overrides defaults (validated + clamped; malformed → plain
+  defaults). Deliberate limits: an uploaded GPX can't travel by link, and the
+  `calibrated` flag never travels — the recipient didn't calibrate, so they
+  get the honest wide band even if the sender's factor was measured.
+  Clipboard-blocked fallback drops the hash into the address bar. Smoke test
+  locks the restore path. `copy-link` analytics event.
+- **og.png now generated FROM the product.** `scripts/gen-og.mjs` (run with
+  npx tsx) renders the real share card from the bundled example course
+  through the real engine pipeline — colored profile, honest range,
+  power-hike stat — so the social preview can't drift from the app.
+  `public/og.svg` (the old hand-made design) deleted.
+
 ## Next
 - **Optional elevation polish** (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or try a Savitzky-Golay

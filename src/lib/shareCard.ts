@@ -4,7 +4,8 @@
 // compiles to oklch() colors, which the DOM-screenshot libraries
 // (html2canvas / html-to-image) choke on. This card uses only explicit hex
 // colors and a system-font stack, so it rasterizes cleanly in any browser
-// (see src/lib/rasterize.ts). The visual language mirrors public/og.svg.
+// (see src/lib/rasterize.ts). public/og.png is generated FROM this card
+// (scripts/gen-og.mjs), so the social preview can't drift from the product.
 
 import { fmtClock, fmtClockShort, fmtPace } from "./format";
 import { gradeColor } from "./gradeColor";

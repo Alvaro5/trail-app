@@ -136,6 +136,39 @@ const KM_PER_MI = 1.609344;
 const FT_PER_M = 3.28084;
 const MILE_M = 1609.344;
 
+// Plan settings encoded in the URL hash (#p=6:00&vam=750&gate=18&tf=1.08&u=metric)
+// so a plan can travel as a LINK, not just a PNG. Only the effort inputs are
+// encoded: a link can't carry an uploaded GPX file, and the calibrated flag
+// deliberately doesn't travel — the recipient didn't calibrate, so they get
+// the honest wide band even when the sender's factor was measured.
+type HashPlan = {
+  pace?: string;
+  vam?: number;
+  gate?: number;
+  tf?: number;
+  units?: Units;
+};
+
+function readPlanFromHash(): HashPlan {
+  try {
+    const p = new URLSearchParams(window.location.hash.slice(1));
+    const plan: HashPlan = {};
+    const pace = p.get("p");
+    if (pace && !Number.isNaN(parsePace(pace))) plan.pace = pace;
+    const vam = Number(p.get("vam"));
+    if (vam >= 300 && vam <= 1200) plan.vam = Math.round(vam);
+    const gate = Number(p.get("gate"));
+    if (gate >= 5 && gate <= 40) plan.gate = Math.round(gate);
+    const tf = Number(p.get("tf"));
+    if (tf >= 0.8 && tf <= 1.6) plan.tf = tf;
+    const u = p.get("u");
+    if (u === "metric" || u === "imperial") plan.units = u;
+    return plan;
+  } catch {
+    return {}; // malformed hash → plain defaults, never a crash
+  }
+}
+
 function initialUnits(): Units {
   // Storage can be absent or throw (private browsing, test envs) — the
   // preference is a nicety, never worth crashing over.
@@ -223,14 +256,16 @@ function SliderField({
 function GpxUpload() {
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [units, setUnits] = useState<Units>(initialUnits);
+  // A shared-plan link overrides the defaults for every effort input below.
+  const [hashPlan] = useState(readPlanFromHash);
+  const [units, setUnits] = useState<Units>(() => hashPlan.units ?? initialUnits());
   // A sensible easy default in the active unit (6:00/km ≈ 9:39/mi).
   const [paceText, setPaceText] = useState(
-    units === "imperial" ? "9:40" : "6:00",
+    hashPlan.pace ?? (units === "imperial" ? "9:40" : "6:00"),
   );
-  const [vam, setVam] = useState(750);
-  const [hikeAbovePct, setHikeAbovePct] = useState(18);
-  const [terrainFactor, setTerrainFactor] = useState(1.0);
+  const [vam, setVam] = useState(hashPlan.vam ?? 750);
+  const [hikeAbovePct, setHikeAbovePct] = useState(hashPlan.gate ?? 18);
+  const [terrainFactor, setTerrainFactor] = useState(hashPlan.tf ?? 1.0);
   // Course name shown on the shareable image; prefilled on load, editable.
   const [title, setTitle] = useState("");
   const [sharing, setSharing] = useState(false);
@@ -238,6 +273,33 @@ function GpxUpload() {
   // The full table is ~70 rows for a 70k — collapsed by default so the page
   // ends near the stats instead of scrolling forever.
   const [showAllSplits, setShowAllSplits] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Share the current effort settings as a URL (see readPlanFromHash for
+  // what travels and what deliberately doesn't).
+  async function handleCopyLink() {
+    const params = new URLSearchParams({
+      p: paceText,
+      vam: String(vam),
+      gate: String(hikeAbovePct),
+      tf: terrainFactor.toFixed(2),
+      u: units,
+    });
+    const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+      trackEvent("copy-link");
+    } catch {
+      // Clipboard can be blocked (permissions, non-secure context). Put the
+      // hash in the address bar so the user can copy it from there.
+      window.location.hash = params.toString();
+      setShareError(
+        "Couldn't copy automatically — the link is in your address bar now.",
+      );
+    }
+  }
   // True while the dashboard shows the bundled course (auto-loaded or clicked),
   // so we can badge it as an example rather than let it pass for the visitor's
   // own race. Cleared the moment a user upload succeeds.
@@ -252,9 +314,11 @@ function GpxUpload() {
   // typo) the plan keeps using the last valid pace instead of silently
   // resetting, and the field shows an inline invalid state. The last valid
   // value is state, updated in onChange — not a ref written during render.
-  const [lastValidPaceSec, setLastValidPaceSec] = useState(
-    units === "imperial" ? 580 : 360,
-  );
+  const [lastValidPaceSec, setLastValidPaceSec] = useState(() => {
+    const fromHash = parsePace(hashPlan.pace ?? "");
+    if (!Number.isNaN(fromHash)) return fromHash;
+    return units === "imperial" ? 580 : 360;
+  });
   const paceSec = parsePace(paceText);
   const paceValid = !Number.isNaN(paceSec);
   const effectivePaceSec = paceValid ? paceSec : lastValidPaceSec;
@@ -866,6 +930,13 @@ function GpxUpload() {
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {sharing ? "Creating image…" : "Share image"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="rounded-md border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-emerald-500 hover:text-white"
+              >
+                {linkCopied ? "Copied ✓" : "Copy link"}
               </button>
             </div>
             {shareError && (

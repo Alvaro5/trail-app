@@ -66,4 +66,27 @@ describe("App smoke test", () => {
       0,
     );
   });
+
+  it("restores a shared plan from the URL hash", async () => {
+    window.location.hash = "#p=5:00&vam=900&gate=25&tf=1.10&u=metric";
+    try {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      await act(async () => {
+        createRoot(container).render(<App />);
+      });
+      await flush();
+
+      const text = container.textContent ?? "";
+      // Advanced-settings content is in the DOM even while collapsed.
+      expect(text).toContain("×1.10");
+      expect(text).toContain("900 m/h");
+      expect(text).toContain("25%");
+      const paceInput =
+        container.querySelector<HTMLInputElement>("input[aria-invalid]");
+      expect(paceInput?.value).toBe("5:00");
+    } finally {
+      window.location.hash = "";
+    }
+  });
 });
