@@ -4,6 +4,13 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
 import { track } from './lib/analytics'
+import { registerSW } from 'virtual:pwa-register'
+
+// autoUpdate + this helper = the page reloads itself the moment a newly
+// deployed service worker takes control, so nobody is ever stuck one deploy
+// behind the cached shell. (Without it, updates only landed on the SECOND
+// visit after a deploy — the owner hit exactly that.)
+registerSW({ immediate: true })
 
 // Minimal error visibility, privacy-stance compatible: crashes surface as a
 // truncated `app-error` event in Umami instead of vanishing into consoles we

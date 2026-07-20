@@ -701,6 +701,15 @@
     guarded by a 4th Playwright spec (readout advances, wall clock present;
     the spec also caught that en-US e2e runs in miles). 125 unit + 4 e2e.
 
+- **SW update fix (owner hit it: "I don't see the new features").** With
+  autoUpdate + the plain injected registration, a deploy only reached users
+  on their SECOND visit: the service worker serves the cached shell
+  instantly while the new one installs in the background. main.tsx now uses
+  `virtual:pwa-register` with `registerSW({ immediate: true })`, which
+  reloads the page the moment a newly deployed worker takes control. One
+  last manual reload is needed to pick up THIS deploy; from then on updates
+  land automatically.
+
 ## Next
 - **Owner-gated** (explicitly deferred, do not start without a decision):
   fatigue-fade model (needs a second calibration point; never fit terrain +
