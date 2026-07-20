@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { gradeColor } from "./lib/gradeColor";
 import { cumulativeGainSeries } from "./lib/pacing";
 
@@ -117,35 +117,56 @@ export default function ElevationChart({
     const x = (km: number) => AXIS_LEFT + ((km - km0) / totalKm) * plotW;
     const y = (ele: number) => PAD_TOP + (1 - (ele - y0) / (y1 - y0)) * plotH;
 
-    // Path, downsampled to ~2 points per horizontal pixel: invisible at
-    // render, meaningfully lighter for the DOM on 7k-point courses.
-    const stride = Math.max(1, Math.floor(profile.length / (plotW * 2)));
-    const pts: string[] = [];
-    for (let i = 0; i < profile.length; i += stride)
-      pts.push(`${x(profile[i].km).toFixed(1)},${y(profile[i].ele).toFixed(1)}`);
-    const last = profile[profile.length - 1];
-    pts.push(`${x(last.km).toFixed(1)},${y(last.ele).toFixed(1)}`);
-    const line = `M${pts.join("L")}`;
-    const baseY = PAD_TOP + plotH;
-    const area = `${line}L${(AXIS_LEFT + plotW).toFixed(1)},${baseY}L${AXIS_LEFT},${baseY}Z`;
-
-    // Grade-colored stroke: run-length encoded gradient stops on a 30 m
-    // grid — a pair per color CHANGE, so short walls survive without
-    // thousands of stops.
-    const stops: { off: number; color: string }[] = [];
-    let prev = "";
-    let prevI = 0;
-    for (let i = 0; i < profile.length; i += 3) {
-      const c = colorAt(i);
-      if (c !== prev) {
-        if (prev)
-          stops.push({ off: (profile[i - 1].km - km0) / totalKm, color: prev });
-        stops.push({ off: (profile[i].km - km0) / totalKm, color: c });
-        prev = c;
+    // Color runs on a 30 m grid (RLE: one run per color CHANGE). Runs are
+    // INDEX ranges, later drawn as solid-colored subpaths — no gradient
+    // stroke, which iOS Safari renders unreliably and which can drift from
+    // a downsampled path.
+    const runs: { color: string; from: number; to: number }[] = [];
+    {
+      let runStart = 0;
+      let runColor = colorAt(0);
+      for (let i = 3; i < profile.length; i += 3) {
+        const c = colorAt(i);
+        if (c !== runColor) {
+          runs.push({ color: runColor, from: runStart, to: i });
+          runStart = i;
+          runColor = c;
+        }
       }
-      prevI = i;
+      runs.push({ color: runColor, from: runStart, to: profile.length - 1 });
     }
-    if (prev) stops.push({ off: (profile[prevI].km - km0) / totalKm, color: prev });
+
+    // Decimate to ~2 points per horizontal pixel BUT always keep every run
+    // boundary, so short steep walls survive any viewport width and the
+    // colors sit exactly on the drawn geometry (the mobile bug was the path
+    // quantizing away from full-resolution gradient stops).
+    const stride = Math.max(1, Math.floor(profile.length / (plotW * 2)));
+    const keep = new Set<number>();
+    for (let i = 0; i < profile.length; i += stride) keep.add(i);
+    keep.add(profile.length - 1);
+    for (const r of runs) {
+      keep.add(r.from);
+      keep.add(r.to);
+    }
+    const idxs = [...keep].sort((a, b) => a - b);
+    const pt = (i: number) =>
+      `${x(profile[i].km).toFixed(1)},${y(profile[i].ele).toFixed(1)}`;
+    const baseY = PAD_TOP + plotH;
+    const area = `M${idxs.map(pt).join("L")}L${(AXIS_LEFT + plotW).toFixed(1)},${baseY}L${AXIS_LEFT},${baseY}Z`;
+    // Per-run solid subpaths over the same decimated index list.
+    let cursor = 0;
+    const runPaths = runs.map((r) => {
+      const parts: string[] = [];
+      while (cursor > 0 && idxs[cursor] > r.from) cursor--;
+      while (idxs[cursor] < r.from) cursor++;
+      let j = cursor;
+      while (j < idxs.length && idxs[j] <= r.to) {
+        parts.push(pt(idxs[j]));
+        j++;
+      }
+      cursor = Math.max(0, j - 1);
+      return { color: r.color, d: `M${parts.join("L")}` };
+    });
 
     // Axis ticks.
     const displayTotal = imperial ? totalKm / 1.609344 : totalKm;
@@ -183,9 +204,8 @@ export default function ElevationChart({
       km0,
       x,
       y,
-      line,
       area,
-      stops,
+      runPaths,
       xTicks,
       yTicks,
       gradeAt,
@@ -195,30 +215,22 @@ export default function ElevationChart({
     };
   }, [profile, hikeAboveGrade, imperial, plotW, plotH, eleUnit]);
 
-  // Entrance: the profile draws itself left to right on a new course (the
-  // first thing a visitor sees doing something). Imperative dash animation,
-  // cleared afterwards so the gradient stroke is untouched; skipped for
-  // reduced-motion users and environments without getTotalLength (tests).
-  const strokeRef = useRef<SVGPathElement>(null);
+  // Entrance: the profile wipes in left to right on a new course (a clip
+  // rect widening over the whole colored group — works for any number of
+  // subpaths, unlike a dash animation). Keyed per course so resizes don't
+  // replay; skipped under prefers-reduced-motion.
+  const clipRectRef = useRef<SVGRectElement>(null);
   const areaRef = useRef<SVGPathElement>(null);
   const drawnKey = useRef("");
   useEffect(() => {
-    const path = strokeRef.current;
-    if (!path || !geom) return;
+    const rect = clipRectRef.current;
+    if (!rect || !geom) return;
     const key = `${profile.length}:${profile[profile.length - 1]?.km}`;
-    if (drawnKey.current === key) return; // resize re-renders don't replay
+    if (drawnKey.current === key) return;
     drawnKey.current = key;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
       return;
-    let len = 0;
-    try {
-      len = path.getTotalLength();
-    } catch {
-      return;
-    }
-    if (!len) return;
-    path.style.strokeDasharray = String(len);
-    path.style.strokeDashoffset = String(len);
+    rect.setAttribute("width", "0");
     if (areaRef.current) areaRef.current.style.opacity = "0";
     const t0 = performance.now();
     const D = 1100;
@@ -226,12 +238,11 @@ export default function ElevationChart({
     const step = (now: number) => {
       const f = Math.min(1, (now - t0) / D);
       const e = 1 - Math.pow(1 - f, 3);
-      path.style.strokeDashoffset = String(len * (1 - e));
+      rect.setAttribute("width", String(e * 4000));
       if (areaRef.current) areaRef.current.style.opacity = String(e * e);
       if (f < 1) raf = requestAnimationFrame(step);
       else {
-        path.style.strokeDasharray = "";
-        path.style.strokeDashoffset = "";
+        rect.setAttribute("width", "4000");
         if (areaRef.current) areaRef.current.style.opacity = "";
       }
     };
@@ -308,6 +319,9 @@ export default function ElevationChart({
     onHoverKm?.(p.km);
   };
 
+  const uid = useId().replace(/[:]/g, "");
+  const fillId = `gp-fill-${uid}`;
+  const clipId = `gp-clip-${uid}`;
   const gridColor = dark ? "#27272a" : "#e4e4e7";
   const axisText = "#71717a";
   const containerStyle =
@@ -324,26 +338,14 @@ export default function ElevationChart({
       {geom && (
         <svg width={W} height={H} className="block" aria-hidden>
           <defs>
-            <linearGradient id="gp-ele-fill" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#34d399" stopOpacity={0.35} />
               <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
             </linearGradient>
-            <linearGradient
-              id="gp-ele-stroke"
-              x1={AXIS_LEFT}
-              y1="0"
-              x2={AXIS_LEFT + plotW}
-              y2="0"
-              gradientUnits="userSpaceOnUse"
-            >
-              {geom.stops.map((s, i) => (
-                <stop
-                  key={i}
-                  offset={`${(s.off * 100).toFixed(2)}%`}
-                  stopColor={s.color}
-                />
-              ))}
-            </linearGradient>
+            {/* Entrance wipe: the rect widens over the profile group. */}
+            <clipPath id={clipId}>
+              <rect ref={clipRectRef} x="0" y="0" width="4000" height="4000" />
+            </clipPath>
           </defs>
           {geom.yTicks.map((tk) => (
             <g key={tk.py}>
@@ -377,16 +379,21 @@ export default function ElevationChart({
               {tk.label}
             </text>
           ))}
-          <path ref={areaRef} d={geom.area} fill="url(#gp-ele-fill)" />
-          <path
-            ref={strokeRef}
-            d={geom.line}
-            fill="none"
-            stroke="url(#gp-ele-stroke)"
-            strokeWidth={2.5}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
+          <g clipPath={`url(#${clipId})`}>
+            <path ref={areaRef} d={geom.area} fill={`url(#${fillId})`} />
+            {/* Solid-colored subpaths, one per grade run: deterministic on
+                every engine (iOS Safari mishandled the gradient stroke). */}
+            <g
+              fill="none"
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            >
+              {geom.runPaths.map((r, i) => (
+                <path key={i} d={r.d} stroke={r.color} />
+              ))}
+            </g>
+          </g>
           {/* Aid-station markers, above the area so they read on the fill. */}
           {aidKms?.map((k, i) => (
             <g key={k}>

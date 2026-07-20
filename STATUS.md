@@ -730,6 +730,22 @@
     Playwright spec (ribbon has real geometry, the orbit changes it,
     Escape closes). 132 unit + 5 e2e.
 
+- **Mobile chart fix (owner's iPhone screenshot: ghosted/offset colors).**
+  Two compounding causes: at ~330 px plot width the path decimated on a
+  100 m stride while the gradient-stroke stops stayed on the full-res 30 m
+  grid (colors drifting off the drawn walls), and iOS Safari renders
+  userSpaceOnUse gradient strokes unreliably anyway. Fix: NO MORE GRADIENT
+  STROKE — the profile is now solid-colored subpaths, one per 30 m-grid
+  color run (the map's proven approach), over a decimation that always
+  keeps run boundaries, so short walls and their colors survive any
+  viewport width on any engine. The entrance animation became a clip-rect
+  wipe (dash-draw doesn't span multiple subpaths); SVG ids are per-instance
+  via useId (two charts can be mounted). Verified via Playwright shots at
+  390 px/DPR 3 (clean) and 1400 px (unchanged). Also confirmed the 3D and
+  Expand buttons both render at phone width: the owner's missing 3D button
+  was a stale service worker on the phone (pre-auto-update deploy), which
+  one manual close/reopen resolves permanently.
+
 ## Next
 - **Owner-gated** (explicitly deferred, do not start without a decision):
   fatigue-fade model (needs a second calibration point; never fit terrain +
