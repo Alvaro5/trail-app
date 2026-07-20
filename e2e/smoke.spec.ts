@@ -83,3 +83,20 @@ test("race replay animates a dot with a live readout", async ({ page }) => {
   expect(t2).toMatch(/\d{2}:\d{2}/);
   await page.getByRole("button", { name: /Stop replay/ }).click();
 });
+
+test("3D flyover renders a rotating course ribbon", async ({ page }) => {
+  await page.goto("/#rav=17,33,47");
+  await expect(page.getByText("Projected finish")).toBeVisible();
+  await page.getByRole("button", { name: "3D", exact: true }).click();
+  const overlay = page.locator("body > div.fixed");
+  await expect(overlay.getByText("3D flyover")).toBeVisible();
+  // The ribbon paths get real geometry once the rAF loop draws…
+  const path = overlay.locator("svg path").nth(2);
+  await expect(path).toHaveAttribute("d", /M.+L.+/);
+  // …and the auto-orbit keeps changing it.
+  const d1 = await path.getAttribute("d");
+  await page.waitForTimeout(800);
+  expect(await path.getAttribute("d")).not.toBe(d1);
+  await page.keyboard.press("Escape");
+  await expect(overlay).toHaveCount(0);
+});

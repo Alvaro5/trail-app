@@ -195,6 +195,51 @@ export default function ElevationChart({
     };
   }, [profile, hikeAboveGrade, imperial, plotW, plotH, eleUnit]);
 
+  // Entrance: the profile draws itself left to right on a new course (the
+  // first thing a visitor sees doing something). Imperative dash animation,
+  // cleared afterwards so the gradient stroke is untouched; skipped for
+  // reduced-motion users and environments without getTotalLength (tests).
+  const strokeRef = useRef<SVGPathElement>(null);
+  const areaRef = useRef<SVGPathElement>(null);
+  const drawnKey = useRef("");
+  useEffect(() => {
+    const path = strokeRef.current;
+    if (!path || !geom) return;
+    const key = `${profile.length}:${profile[profile.length - 1]?.km}`;
+    if (drawnKey.current === key) return; // resize re-renders don't replay
+    drawnKey.current = key;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
+      return;
+    let len = 0;
+    try {
+      len = path.getTotalLength();
+    } catch {
+      return;
+    }
+    if (!len) return;
+    path.style.strokeDasharray = String(len);
+    path.style.strokeDashoffset = String(len);
+    if (areaRef.current) areaRef.current.style.opacity = "0";
+    const t0 = performance.now();
+    const D = 1100;
+    let raf = 0;
+    const step = (now: number) => {
+      const f = Math.min(1, (now - t0) / D);
+      const e = 1 - Math.pow(1 - f, 3);
+      path.style.strokeDashoffset = String(len * (1 - e));
+      if (areaRef.current) areaRef.current.style.opacity = String(e * e);
+      if (f < 1) raf = requestAnimationFrame(step);
+      else {
+        path.style.strokeDasharray = "";
+        path.style.strokeDashoffset = "";
+        if (areaRef.current) areaRef.current.style.opacity = "";
+      }
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the course, not on resize-driven geometry
+  }, [profile]);
+
   // ---- Imperative hover machinery: no React state past this line. ----
   const tooltipRef = useRef<HTMLDivElement>(null);
   const cursorLineRef = useRef<SVGLineElement>(null);
@@ -332,8 +377,9 @@ export default function ElevationChart({
               {tk.label}
             </text>
           ))}
-          <path d={geom.area} fill="url(#gp-ele-fill)" />
+          <path ref={areaRef} d={geom.area} fill="url(#gp-ele-fill)" />
           <path
+            ref={strokeRef}
             d={geom.line}
             fill="none"
             stroke="url(#gp-ele-stroke)"

@@ -710,6 +710,26 @@
   last manual reload is needed to pick up THIS deploy; from then on updates
   land automatically.
 
+- **First-impression round: self-drawing profile + 3D flyover.**
+  - The elevation profile now DRAWS ITSELF left to right (~1.1 s dash
+    animation, area fading in behind) on every new course, including the
+    auto-loaded example: the first thing a visitor sees is the product
+    doing something. Keyed per course so resizes don't replay; skipped
+    under prefers-reduced-motion; cleared after, so the gradient stroke is
+    untouched.
+  - *3D flyover* ("3D" button on the chart card → fullscreen overlay): the
+    course as a slowly orbiting ribbon in the app's grade colors, floating
+    above its own ground shadow, with aid-station droplines (R1…) and
+    start/finish dots. Drag to orbit (pitch clamped map↔profile), auto-
+    rotation resumes after idle. HAND-ROLLED: ~40 lines of tested
+    projection math (`lib/pseudo3d.ts`: local meters, auto vertical
+    exaggeration targeting 18% relief with a ×20 cap so Fontainebleau's
+    80 m walls actually read, yaw+pitch orthographic camera, rotation-
+    stable fit) driving plain SVG paths imperatively at 60 fps — the whole
+    chunk is 4.7 kB where three.js would be ~150 kB. Guarded by a 5th
+    Playwright spec (ribbon has real geometry, the orbit changes it,
+    Escape closes). 132 unit + 5 e2e.
+
 ## Next
 - **Owner-gated** (explicitly deferred, do not start without a decision):
   fatigue-fade model (needs a second calibration point; never fit terrain +

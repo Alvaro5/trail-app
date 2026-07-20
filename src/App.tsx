@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 // its own async chunk and never blocks first paint. Same for Leaflet.
 const ElevationChart = lazy(() => import("./ElevationChart"));
 const CourseMap = lazy(() => import("./CourseMap"));
+const Course3D = lazy(() => import("./Course3D"));
 import {
   parseGpx,
   cumulativeDistances,
@@ -553,6 +554,7 @@ function GpxUpload({
   // are the "actually study the course" modes.
   const [chartZoom, setChartZoom] = useState(false);
   const [mapZoom, setMapZoom] = useState(false);
+  const [threeD, setThreeD] = useState(false);
   // Basemap preference is lifted here (not in CourseMap) because two map
   // instances can be live at once — inline + fullscreen must stay in sync.
   const [basemap, setBasemap] = useState<BasemapId>(initialBasemap);
@@ -638,16 +640,17 @@ function GpxUpload({
   });
 
   useEffect(() => {
-    if (!chartZoom && !mapZoom) return;
+    if (!chartZoom && !mapZoom && !threeD) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setChartZoom(false);
         setMapZoom(false);
+        setThreeD(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chartZoom, mapZoom]);
+  }, [chartZoom, mapZoom, threeD]);
 
   // Share the current effort settings as a URL (see readPlanFromHash for
   // what travels and what deliberately doesn't).
@@ -2032,6 +2035,53 @@ function GpxUpload({
             </Suspense>
           </div>
 
+          {/* 3D flyover overlay: same portal pattern as the other
+              fullscreen views. Drag orbits, Escape/backdrop closes. */}
+          {threeD &&
+            createPortal(
+              <div
+                className="animate-fade-in fixed inset-0 z-50 flex flex-col gap-3 bg-zinc-950 p-4 light:bg-zinc-50 sm:p-8"
+                onClick={() => setThreeD(false)}
+              >
+                <div
+                  className="flex items-center justify-between"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h2 className="text-lg font-semibold">
+                    {title || EXAMPLES.imperial.title}
+                    <span className="ml-2 text-sm font-normal text-zinc-500">
+                      {t.threeDTitle}
+                    </span>
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setThreeD(false)}
+                    className={btnSecondaryClass}
+                  >
+                    <CloseIcon className="h-4 w-4" />
+                    {t.closeChart}
+                  </button>
+                </div>
+                <div
+                  className="min-h-0 flex-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Suspense fallback={null}>
+                    <Course3D
+                      coords={track.coords}
+                      eles={track.profile.map((p) => p.ele)}
+                      hikeAboveGrade={hikeAbovePct / 100}
+                      aidKms={aidKms}
+                      theme={theme}
+                      ariaLabel={t.threeDTitle}
+                    />
+                  </Suspense>
+                </div>
+                <div onClick={(e) => e.stopPropagation()}>{chartLegend}</div>
+              </div>,
+              document.body,
+            )}
+
           {/* Fullscreen map, same overlay pattern as the chart (portal to
               <body>, opaque, Escape/backdrop closes). */}
           {mapZoom &&
@@ -2111,14 +2161,24 @@ function GpxUpload({
               {/* Names the colors — "power-hike" appears right where you look
                   for it, on the profile itself. */}
               {chartLegend}
-              <button
-                type="button"
-                onClick={() => setChartZoom(true)}
-                className={`inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:border-emerald-500 hover:text-white light:border-zinc-300 light:bg-white light:text-zinc-600 light:hover:text-emerald-700 ${focusRing}`}
-              >
-                <ExpandIcon className="h-3.5 w-3.5" />
-                {t.expandChart}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setThreeD(true)}
+                  title={t.threeDTitle}
+                  className={`inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:border-emerald-500 hover:text-white light:border-zinc-300 light:bg-white light:text-zinc-600 light:hover:text-emerald-700 ${focusRing}`}
+                >
+                  3D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartZoom(true)}
+                  className={`inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:border-emerald-500 hover:text-white light:border-zinc-300 light:bg-white light:text-zinc-600 light:hover:text-emerald-700 ${focusRing}`}
+                >
+                  <ExpandIcon className="h-3.5 w-3.5" />
+                  {t.expandChart}
+                </button>
+              </div>
             </div>
             {/* Ravitaillements: positions typed in the active unit; each chip
                 shows the PROJECTED arrival — the plan's real added value over
