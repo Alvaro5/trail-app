@@ -12,9 +12,10 @@ export default defineConfig({
     // Installable + offline: the app shell precaches, so a plan saved on the
     // device (lib/persistence.ts) opens with no signal — the race-day case.
     // Deliberately NO runtime caching: map tiles and Overpass stay live-only
-    // (tile-server usage policies, and stale POIs are worse than none).
-    // The bundled example GPX files are not precached either; offline serves
-    // YOUR saved plan, not the demo.
+    // (tile-server usage policies, and stale POIs are worse than none). The
+    // bundled example GPX files ARE precached (~570 kB) so a first offline
+    // open still shows a full dashboard instead of a confusing empty state,
+    // and building a NEW plan offline from a local GPX works end to end.
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
@@ -39,7 +40,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,gpx}"],
         // og.png exists for social unfurls only; the app never fetches it.
         globIgnores: ["**/og.png"],
       },

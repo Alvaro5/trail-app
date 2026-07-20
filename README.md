@@ -54,7 +54,7 @@ model is the foundation; the calibration layer is the product.
   </tr>
   <tr>
     <td>An <b>honest finish range</b>, not a single fake-precise number, plus distance, D+, and how much of the course you'll walk.</td>
-    <td>A <b>grade-colored course map</b> (terrain / satellite / hybrid basemaps) with aid stations and opt-in water/toilet/viewpoint POIs.</td>
+    <td>A <b>grade-colored course map</b> (terrain / satellite / hybrid basemaps) with aid stations and opt-in POIs: water, toilets, viewpoints, cafés, springs, shelters, parking, picnic spots.</td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/nutrition.png" alt="Nutrition plan table with carbs, fluids, sodium, and calories for each segment between aid stations, plus totals."></td>
@@ -66,8 +66,9 @@ model is the foundation; the calibration layer is the product.
   </tr>
 </table>
 
-You can share a plan as an image, a link that carries your settings, or a
-printable race-day PDF.
+You can share a plan as an image, a link that carries your settings, a
+printable race-day PDF, or a watch-ready GPX whose waypoints carry your
+projected ETAs. The interface speaks English, French, and Spanish.
 
 ## How it works
 
@@ -139,7 +140,8 @@ src/
 
 ## Tech
 
-Vite + React 19 + TypeScript, Tailwind v4, Recharts, Leaflet, Vitest.
+Vite + React 19 + TypeScript, Tailwind v4, Leaflet, a hand-rolled SVG
+chart, Vitest + Playwright. Installable PWA (the app shell works offline).
 Client-side only — no backend, no database, no auth. Deployed on Vercel,
 auto-deploy from `main`. The pure engine in `src/lib/pacing.ts` is the asset;
 its Minetti anchors, clamp, and split invariants are locked by tests.
