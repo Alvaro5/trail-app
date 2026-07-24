@@ -15,7 +15,7 @@ runs in your browser. Your GPX never leaves your device.
 <p align="center">
   <a href="https://gradepace.vercel.app">
     <img src="docs/screenshots/profile.png" width="840"
-         alt="Elevation profile of the Imperial Trail colored by what you will do on each section: blue descents, green runnable, amber climbs, rose power-hikes, with R1/R2/R3 aid stations and projected arrival times.">
+         alt="Elevation profile of the Imperial Trail, colored by what you will do on each section: blue descents, green runnable, amber climbs, rose power-hikes, with R1-R3 aid-station lines and C1-C7 key-climb markers.">
   </a>
 </p>
 
@@ -49,26 +49,35 @@ model is the foundation; the calibration layer is the product.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/projection.png" alt="Stat cards: distance 68.75 km, elevation gain 1,193 m, power-hike 0.98 km, projected finish 7:35:30, expect 6:59 to 8:21."></td>
-    <td width="50%"><img src="docs/screenshots/map.png" alt="Course map on a topographic basemap with the route colored by grade, amber aid-station markers, and a checkered finish flag."></td>
+    <td width="50%"><img src="docs/screenshots/projection.png" alt="Stat cards: distance 68.75 km, elevation gain 1,193 m, power-hike 0.98 km, projected finish 7:43:26, expect 7:06 to 8:30, with a pace-sensitivity row and a note that a flat-pace calculator would promise 6:52."></td>
+    <td width="50%"><img src="docs/screenshots/map.png" alt="Course map on a topographic basemap with the route colored by grade, numbered distance markers, amber aid-station markers, a checkered finish flag, and a Replay the race control."></td>
   </tr>
   <tr>
-    <td>An <b>honest finish range</b>, not a single fake-precise number, plus distance, D+, and how much of the course you'll walk.</td>
-    <td>A <b>grade-colored course map</b> (terrain / satellite / hybrid basemaps) with aid stations and opt-in POIs: water, toilets, viewpoints, cafés, springs, shelters, parking, picnic spots.</td>
+    <td>An <b>honest finish range</b>, a pace-sensitivity row, and the naive-planner contrast: "a flat-pace calculator would promise 6:52. This course makes it 7:43."</td>
+    <td>A <b>grade-colored course map</b> (terrain / satellite / hybrid) with numbered distance markers, aid stations, opt-in POIs, and an animated race replay.</td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/nutrition.png" alt="Nutrition plan table with carbs, fluids, sodium, and calories for each segment between aid stations, plus totals."></td>
-    <td><img src="docs/screenshots/splits.png" alt="Per-kilometer splits table showing grade, D+, hike fraction, target pace, and elapsed time."></td>
+    <td><img src="docs/screenshots/climbs.png" alt="Key climbs table listing seven climbs C1 to C7 with start km, length, D+, average grade, climb time, target VAM, and projected arrival time."></td>
+    <td><img src="docs/screenshots/nutrition.png" alt="Nutrition plan table with carbs, fluids, sodium and calories for each segment between aid stations, an optional caffeine rate, and totals."></td>
   </tr>
   <tr>
-    <td>A <b>nutrition plan</b> that puts carbs, fluids, and sodium on each segment between aid stations, sized by projected time, not distance.</td>
-    <td><b>Per-km (or per-mile) splits</b>: target pace, climb, hike share, and elapsed time, all consistent with the projected finish.</td>
+    <td>The <b>key climbs</b>, C1..C7, where the race is decided: length, D+, average grade, the time each one takes, and when you'll hit it.</td>
+    <td>A <b>nutrition plan</b> sizing carbs, fluids, sodium (and optional caffeine) per segment by projected time, not distance.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/splits.png" alt="Per-kilometer splits table showing grade, D+, hike fraction, target pace, and elapsed plus wall-clock time."></td>
+    <td><img src="docs/screenshots/flyover.png" alt="Hand-rolled 3D flyover: the course as a grade-colored ribbon floating above its ground shadow, with aid-station labels."></td>
+  </tr>
+  <tr>
+    <td><b>Per-km (or per-mile) splits</b>: target pace, climb, hike share, elapsed and wall-clock time, all consistent with the projected finish.</td>
+    <td>A hand-rolled <b>3D flyover</b> of the course (no three.js, ~5 kB) in the same grade colors, for studying the route before race day.</td>
   </tr>
 </table>
 
 You can share a plan as an image, a link that carries your settings, a
 printable race-day PDF, or a watch-ready GPX whose waypoints carry your
-projected ETAs. The interface speaks English, French, and Spanish.
+projected ETAs. The interface speaks English, French, Spanish, German, and
+Italian.
 
 ## How it works
 
@@ -135,6 +144,8 @@ src/
                        tolerance) behind the Key climbs card.
   lib/raceCompare.ts   Post-race check: recorded race vs the plan, drift
                        series and worst-stretch locator.
+  lib/pseudo3d.ts      Projection math for the hand-rolled 3D course flyover
+                       (orthographic camera, auto vertical exaggeration).
   App.tsx              UI: upload, effort inputs, calibration, share, table.
   ElevationChart.tsx   Grade-colored profile, hand-rolled SVG (lazy chunk).
   CourseMap.tsx        Map with the grade-colored route, aid stations, basemap
