@@ -33,7 +33,12 @@ describe("adjustStops", () => {
       ],
       180,
     );
-    expect(adj[0]).toEqual({ km: 17, arriveSec: 2 * H, departSec: 2 * H + 180 });
+    expect(adj[0]).toEqual({
+      km: 17,
+      arriveSec: 2 * H,
+      departSec: 2 * H + 180,
+      dwellSec: 180,
+    });
     expect(adj[1].arriveSec).toBe(4 * H + 180); // R1's dwell only
     expect(adj[1].departSec).toBe(4 * H + 360);
     expect(adj[2].arriveSec).toBe(5.5 * H + 360); // R1 + R2
@@ -50,27 +55,68 @@ describe("adjustStops", () => {
     expect(adj.map((s) => s.km)).toEqual([17, 33]);
     expect(adj[0].arriveSec).toBe(2 * H); // first in course order, no prior dwell
   });
+
+  it("a per-stop dwell override replaces the default for that station only", () => {
+    const adj = adjustStops(
+      [
+        { km: 17, eta: 2 * H },
+        { km: 33, eta: 4 * H, dwellSec: 600 }, // drop-bag stop: 10 min
+        { km: 47, eta: 5.5 * H },
+      ],
+      180,
+    );
+    expect(adj[0].departSec).toBe(2 * H + 180); // default
+    expect(adj[1].arriveSec).toBe(4 * H + 180); // R1's default dwell only
+    expect(adj[1].departSec).toBe(4 * H + 180 + 600); // own override
+    expect(adj[1].dwellSec).toBe(600);
+    expect(adj[2].arriveSec).toBe(5.5 * H + 180 + 600); // R1 default + R2 override
+  });
+
+  it("an override of 0 means a no-stop station", () => {
+    const adj = adjustStops(
+      [
+        { km: 17, eta: 2 * H, dwellSec: 0 },
+        { km: 33, eta: 4 * H },
+      ],
+      180,
+    );
+    expect(adj[0].departSec).toBe(2 * H);
+    expect(adj[1].arriveSec).toBe(4 * H); // nothing accumulated at R1
+  });
 });
 
 describe("dwellBefore / adjustedElapsedAt", () => {
+  const aid = [
+    { km: 17, dwellSec: 180 },
+    { km: 33, dwellSec: 180 },
+  ];
+
   it("counts stations STRICTLY before the km: arriving at one excludes its own dwell", () => {
-    const aid = [17, 33];
-    expect(dwellBefore(aid, 17, 180)).toBe(0);
-    expect(dwellBefore(aid, 17.01, 180)).toBe(180);
-    expect(dwellBefore(aid, 33, 180)).toBe(180);
-    expect(dwellBefore(aid, 50, 180)).toBe(360);
+    expect(dwellBefore(aid, 17)).toBe(0);
+    expect(dwellBefore(aid, 17.01)).toBe(180);
+    expect(dwellBefore(aid, 33)).toBe(180);
+    expect(dwellBefore(aid, 50)).toBe(360);
+  });
+
+  it("sums per-station dwells, not a multiple of one value", () => {
+    const mixed = [
+      { km: 17, dwellSec: 120 },
+      { km: 33, dwellSec: 600 },
+    ];
+    expect(dwellBefore(mixed, 50)).toBe(720);
   });
 
   it("passes null through (past track end)", () => {
-    expect(adjustedElapsedAt(null, 10, [5], 180)).toBeNull();
-    expect(adjustedElapsedAt(1000, 10, [5], 180)).toBe(1180);
+    const one = [{ km: 5, dwellSec: 180 }];
+    expect(adjustedElapsedAt(null, 10, one)).toBeNull();
+    expect(adjustedElapsedAt(1000, 10, one)).toBe(1180);
   });
 });
 
 describe("adjustedFinishSec", () => {
-  it("adds n stations times dwell; no-op at zero stations", () => {
-    expect(adjustedFinishSec(7 * H, 3, 180)).toBe(7 * H + 540);
-    expect(adjustedFinishSec(7 * H, 0, 180)).toBe(7 * H);
+  it("adds the total dwell; no-op at zero", () => {
+    expect(adjustedFinishSec(7 * H, 540)).toBe(7 * H + 540);
+    expect(adjustedFinishSec(7 * H, 0)).toBe(7 * H);
   });
 });
 
@@ -157,7 +203,7 @@ describe("dwell x nutrition integration", () => {
       { km: 40, eta: 4 * H },
     ];
     const adj = adjustStops(stops, dwell);
-    const adjFinish = adjustedFinishSec(6 * H, stops.length, dwell);
+    const adjFinish = adjustedFinishSec(6 * H, stops.length * dwell);
     const plan = computeNutrition(
       adjFinish,
       60,

@@ -167,7 +167,7 @@ const en = {
   uploadCourse: "Upload GPX",
   calibAdd: "Add recorded runs",
   aidLabel: "Aid stations",
-  aidPlaceholder: "e.g. 17, 33, 47",
+  aidPlaceholder: "e.g. 17, 33(8), 47",
   mapStart: "Start",
   mapFinish: "Finish",
   mapAria: "Course map",
@@ -232,9 +232,23 @@ const en = {
   sheetFooter: (host: string) => `Built with GradePace · ${host}`,
   dwellLabel: "Stop time",
   dwellHint:
-    "Minutes lost at each aid station (refill, food, queue). Added to every time after that station.",
+    "Minutes lost at each aid station (refill, food, queue). Added to every time after that station. One station different? Write 33(8) in the stations field: 8 min at that one.",
   startLabel: "Start",
   startInvalid: "Enter a start time like 8:00 (24h).",
+  raceDateLabel: "Race date",
+  raceDateHint:
+    "Within 16 days of the race, the day's forecast is fetched for a rounded course midpoint. Your GPX never leaves the device.",
+  weatherCountdown: (days: number) =>
+    days === 1
+      ? "Race-day forecast opens tomorrow."
+      : `Race-day forecast opens in ${days} days.`,
+  weatherLine: (temps: string, rain: string | null) =>
+    rain === null
+      ? `Race-day forecast: ${temps}.`
+      : `Race-day forecast: ${temps}, rain ${rain}.`,
+  weatherHeat: (extra: string, fluid: string) =>
+    `Heat could add up to +${extra}. Consider drinking +${fluid}.`,
+  weatherError: "Race-day forecast is unavailable right now.",
   finishClock: (clock: string) => `finish ≈ ${clock}`,
   cutoffLabel: "Cutoffs",
   cutoffPlaceholder: "e.g. 5:30, 8:00",
@@ -404,7 +418,7 @@ const fr: Messages = {
   uploadCourse: "Importer un GPX",
   calibAdd: "Ajouter des sorties",
   aidLabel: "Ravitaillements",
-  aidPlaceholder: "ex. 17, 33, 47",
+  aidPlaceholder: "ex. 17, 33(8), 47",
   mapStart: "Départ",
   mapFinish: "Arrivée",
   mapAria: "Carte du parcours",
@@ -471,9 +485,23 @@ const fr: Messages = {
   sheetFooter: (host: string) => `Créé avec GradePace · ${host}`,
   dwellLabel: "Temps d'arrêt",
   dwellHint:
-    "Minutes perdues à chaque ravitaillement (remplissage, nourriture, file). Ajoutées à tous les temps après ce ravito.",
+    "Minutes perdues à chaque ravitaillement (remplissage, nourriture, file). Ajoutées à tous les temps après ce ravito. Un ravito différent ? Écrivez 33(8) dans le champ des ravitos : 8 min à celui-là.",
   startLabel: "Départ",
   startInvalid: "Entrez une heure de départ comme 8:00 (24 h).",
+  raceDateLabel: "Date de course",
+  raceDateHint:
+    "À moins de 16 jours de la course, la météo du jour est récupérée pour un point milieu arrondi du parcours. Votre GPX ne quitte jamais l'appareil.",
+  weatherCountdown: (days: number) =>
+    days === 1
+      ? "La météo du jour J ouvre demain."
+      : `La météo du jour J ouvre dans ${days} jours.`,
+  weatherLine: (temps: string, rain: string | null) =>
+    rain === null
+      ? `Météo du jour J : ${temps}.`
+      : `Météo du jour J : ${temps}, pluie ${rain}.`,
+  weatherHeat: (extra: string, fluid: string) =>
+    `La chaleur peut ajouter jusqu'à +${extra}. Pensez à boire +${fluid}.`,
+  weatherError: "Météo du jour J indisponible pour le moment.",
   finishClock: (clock: string) => `arrivée ≈ ${clock}`,
   cutoffLabel: "Barrières",
   cutoffPlaceholder: "ex. 5:30, 8:00",
@@ -639,7 +667,7 @@ const es: Messages = {
   uploadCourse: "Subir GPX",
   calibAdd: "Añadir salidas",
   aidLabel: "Avituallamientos",
-  aidPlaceholder: "ej. 17, 33, 47",
+  aidPlaceholder: "ej. 17, 33(8), 47",
   mapStart: "Salida",
   mapFinish: "Meta",
   mapAria: "Mapa del recorrido",
@@ -706,9 +734,23 @@ const es: Messages = {
   sheetFooter: (host: string) => `Creado con GradePace · ${host}`,
   dwellLabel: "Tiempo de parada",
   dwellHint:
-    "Minutos perdidos en cada avituallamiento (rellenar, comer, cola). Se añaden a todos los tiempos posteriores.",
+    "Minutos perdidos en cada avituallamiento (rellenar, comer, cola). Se añaden a todos los tiempos posteriores. ¿Una parada distinta? Escribe 33(8) en el campo de avituallamientos: 8 min en esa.",
   startLabel: "Salida",
   startInvalid: "Introduce una hora de salida como 8:00 (24 h).",
+  raceDateLabel: "Fecha de carrera",
+  raceDateHint:
+    "A menos de 16 días de la carrera, se consulta el pronóstico del día para un punto medio redondeado del recorrido. Tu GPX nunca sale del dispositivo.",
+  weatherCountdown: (days: number) =>
+    days === 1
+      ? "El pronóstico del día de carrera se abre mañana."
+      : `El pronóstico del día de carrera se abre en ${days} días.`,
+  weatherLine: (temps: string, rain: string | null) =>
+    rain === null
+      ? `Pronóstico del día de carrera: ${temps}.`
+      : `Pronóstico del día de carrera: ${temps}, lluvia ${rain}.`,
+  weatherHeat: (extra: string, fluid: string) =>
+    `El calor puede añadir hasta +${extra}. Considera beber +${fluid}.`,
+  weatherError: "Pronóstico no disponible por ahora.",
   finishClock: (clock: string) => `llegada ≈ ${clock}`,
   cutoffLabel: "Cortes",
   cutoffPlaceholder: "ej. 5:30, 8:00",
@@ -877,7 +919,7 @@ const de: Messages = {
   uploadCourse: "GPX hochladen",
   calibAdd: "Läufe hinzufügen",
   aidLabel: "Verpflegungspunkte",
-  aidPlaceholder: "z. B. 17, 33, 47",
+  aidPlaceholder: "z. B. 17, 33(8), 47",
   mapStart: "Start",
   mapFinish: "Ziel",
   mapAria: "Streckenkarte",
@@ -944,9 +986,23 @@ const de: Messages = {
   sheetFooter: (host: string) => `Erstellt mit GradePace · ${host}`,
   dwellLabel: "Standzeit",
   dwellHint:
-    "Minuten, die an jedem Verpflegungspunkt verloren gehen (Auffüllen, Essen, Schlange). Wird allen späteren Zeiten zugerechnet.",
+    "Minuten, die an jedem Verpflegungspunkt verloren gehen (Auffüllen, Essen, Schlange). Wird allen späteren Zeiten zugerechnet. Ein Punkt anders? 33(8) im Stationsfeld bedeutet: 8 min an diesem.",
   startLabel: "Start",
   startInvalid: "Gib eine Startzeit wie 8:00 ein (24 h).",
+  raceDateLabel: "Renntag",
+  raceDateHint:
+    "Innerhalb von 16 Tagen vor dem Rennen wird die Vorhersage für einen gerundeten Mittelpunkt der Strecke geladen. Dein GPX verlässt nie das Gerät.",
+  weatherCountdown: (days: number) =>
+    days === 1
+      ? "Die Renntag-Vorhersage öffnet morgen."
+      : `Die Renntag-Vorhersage öffnet in ${days} Tagen.`,
+  weatherLine: (temps: string, rain: string | null) =>
+    rain === null
+      ? `Renntag-Vorhersage: ${temps}.`
+      : `Renntag-Vorhersage: ${temps}, Regen ${rain}.`,
+  weatherHeat: (extra: string, fluid: string) =>
+    `Hitze kann bis zu +${extra} kosten. Denk an +${fluid} mehr Flüssigkeit.`,
+  weatherError: "Renntag-Vorhersage derzeit nicht verfügbar.",
   finishClock: (clock: string) => `Ziel ≈ ${clock}`,
   cutoffLabel: "Cut-offs",
   cutoffPlaceholder: "z. B. 5:30, 8:00",
@@ -1113,7 +1169,7 @@ const it: Messages = {
   uploadCourse: "Carica GPX",
   calibAdd: "Aggiungi uscite",
   aidLabel: "Ristori",
-  aidPlaceholder: "es. 17, 33, 47",
+  aidPlaceholder: "es. 17, 33(8), 47",
   mapStart: "Partenza",
   mapFinish: "Arrivo",
   mapAria: "Mappa del percorso",
@@ -1180,9 +1236,23 @@ const it: Messages = {
   sheetFooter: (host: string) => `Creato con GradePace · ${host}`,
   dwellLabel: "Tempo di sosta",
   dwellHint:
-    "Minuti persi a ogni ristoro (rifornimento, cibo, coda). Aggiunti a tutti i tempi successivi.",
+    "Minuti persi a ogni ristoro (rifornimento, cibo, coda). Aggiunti a tutti i tempi successivi. Un ristoro diverso? Scrivi 33(8) nel campo dei ristori: 8 min in quello.",
   startLabel: "Partenza",
   startInvalid: "Inserisci un orario di partenza come 8:00 (24 h).",
+  raceDateLabel: "Data della gara",
+  raceDateHint:
+    "A meno di 16 giorni dalla gara, le previsioni del giorno vengono recuperate per un punto medio arrotondato del percorso. Il tuo GPX non lascia mai il dispositivo.",
+  weatherCountdown: (days: number) =>
+    days === 1
+      ? "Le previsioni del giorno di gara aprono domani."
+      : `Le previsioni del giorno di gara aprono tra ${days} giorni.`,
+  weatherLine: (temps: string, rain: string | null) =>
+    rain === null
+      ? `Previsioni del giorno di gara: ${temps}.`
+      : `Previsioni del giorno di gara: ${temps}, pioggia ${rain}.`,
+  weatherHeat: (extra: string, fluid: string) =>
+    `Il caldo può aggiungere fino a +${extra}. Considera di bere +${fluid} in più.`,
+  weatherError: "Previsioni al momento non disponibili.",
   finishClock: (clock: string) => `arrivo ≈ ${clock}`,
   cutoffLabel: "Cancelli",
   cutoffPlaceholder: "es. 5:30, 8:00",

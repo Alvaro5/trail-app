@@ -27,6 +27,7 @@ export type SavedPlan = {
   sodiumMgPerH: number;
   caffeineMgPerH?: number; // added later; old saves simply lack it
   fadePctPerH?: number; // added later; old saves simply lack it
+  raceDate?: string; // "YYYY-MM-DD"; added later; old saves simply lack it
 };
 
 const KEY = "gp-plan-v1";

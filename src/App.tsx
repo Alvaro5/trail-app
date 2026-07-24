@@ -63,6 +63,14 @@ import {
   type CutoffStatus,
 } from "./lib/logistics";
 import { clearPlan, loadPlan, savePlan } from "./lib/persistence";
+import {
+  daysUntil,
+  fetchRaceWeather,
+  FORECAST_HORIZON_DAYS,
+  heatFluidBumpMlPerH,
+  heatSlowdownPct,
+  type RaceWeather,
+} from "./lib/weather";
 import { buildPlanGpx } from "./lib/planGpx";
 import { detectClimbs } from "./lib/climbs";
 import { compareRace, type RaceComparison } from "./lib/raceCompare";
@@ -206,11 +214,32 @@ function buildTrack(text: string): Track {
 const fmtGrade = (g: number) => `${g > 0 ? "+" : ""}${(g * 100).toFixed(0)}%`;
 
 // Aid-station positions typed as free text ("17, 33, 47"), parsed leniently.
-const parseAidText = (text: string) =>
+// A position may carry its OWN stop time in parentheses: "33(8)" = 8 minutes
+// at that station (drop-bag stop), others keep the default dwell.
+type AidEntry = { pos: number; dwellMin?: number };
+const AID_DWELL_MAX_MIN = 60;
+const parseAidText = (text: string): AidEntry[] =>
   text
+    .replace(/\s+\(/g, "(") // "33 (8)" tolerated
     .split(/[,;\s]+/)
-    .map(Number)
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .flatMap((tok) => {
+      const m = /^(\d+(?:\.\d+)?)(?:\((\d{1,2})\))?$/.exec(tok);
+      if (!m) return [];
+      const pos = Number(m[1]);
+      if (!(pos > 0)) return [];
+      if (m[2] === undefined) return [{ pos }];
+      const dwellMin = Math.min(AID_DWELL_MAX_MIN, Number(m[2]));
+      return [{ pos, dwellMin }];
+    });
+
+// Rebuild the free text from parsed entries (unit conversions, hash restore).
+const fmtAidEntries = (entries: AidEntry[]) =>
+  entries
+    .map(
+      (e) =>
+        `${+e.pos.toFixed(1)}${e.dwellMin !== undefined ? `(${e.dwellMin})` : ""}`,
+    )
+    .join(", ");
 
 const gradeClass = (g: number) =>
   g > 0.005
@@ -272,7 +301,9 @@ type HashPlan = {
   gate?: number;
   tf?: number;
   units?: Units;
-  rav?: number[]; // aid-station positions, metric km (canonical in the hash)
+  // Aid stations, metric km (canonical in the hash); a token may carry a
+  // per-station dwell override in minutes: "rav=17,33(8),47".
+  rav?: AidEntry[];
   // Nutrition rates (nc/nfl/ns) — encoded only when they differ from the
   // defaults, so typical links stay short.
   nc?: number;
@@ -285,6 +316,7 @@ type HashPlan = {
   dw?: number;
   st?: string;
   co?: string;
+  rd?: string; // race date "YYYY-MM-DD" — feeds the race-week forecast
 };
 
 // Aid-station dwell. Default 3 min/station (owner decision, 2026-07): a plan
@@ -324,12 +356,10 @@ function readPlanFromHash(): HashPlan {
     if (u === "metric" || u === "imperial") plan.units = u;
     const rav = p.get("rav");
     if (rav) {
-      const kms = rav
-        .split(",")
-        .map(Number)
-        .filter((n) => Number.isFinite(n) && n > 0 && n < 1000)
+      const entries = parseAidText(rav)
+        .filter((e) => e.pos > 0 && e.pos < 1000)
         .slice(0, 30);
-      if (kms.length) plan.rav = kms;
+      if (entries.length) plan.rav = entries;
     }
     const nc = Number(p.get("nc"));
     if (nc >= CARBS_MIN && nc <= CARBS_MAX) plan.nc = Math.round(nc);
@@ -359,6 +389,8 @@ function readPlanFromHash(): HashPlan {
       )
         plan.co = tokens.join(", ");
     }
+    const rd = p.get("rd");
+    if (rd && /^\d{4}-\d{2}-\d{2}$/.test(rd)) plan.rd = rd;
     return plan;
   } catch {
     return {}; // malformed hash → plain defaults, never a crash
@@ -545,6 +577,16 @@ function GpxUpload({
   const [cutoffText, setCutoffText] = useState(
     hashPlan.co ?? savedPlan?.cutoffText ?? "",
   );
+  // Race date ("YYYY-MM-DD" from the native date input): inside the forecast
+  // horizon it unlocks the race-day weather line; empty = feature off.
+  const [raceDateText, setRaceDateText] = useState(
+    hashPlan.rd ?? savedPlan?.raceDate ?? "",
+  );
+  // Race-day forecast, fetched once per (course, date) inside the horizon.
+  const [weather, setWeather] = useState<{
+    status: "idle" | "ok" | "error";
+    data: RaceWeather | null;
+  }>({ status: "idle", data: null });
   // Course name shown on the shareable image; prefilled on load, editable.
   const [title, setTitle] = useState(savedPlan?.title ?? "");
   const [sharing, setSharing] = useState(false);
@@ -642,11 +684,14 @@ function GpxUpload({
   // "17, 33, 47". Parsed leniently every render; the hash stores metric km.
   const [aidText, setAidText] = useState(() => {
     if (!hashPlan.rav?.length) return savedPlan?.aidText ?? "";
-    const vals =
-      (hashPlan.units ?? savedPlan?.units ?? initialUnits()) === "imperial"
-        ? hashPlan.rav.map((k) => +(k / KM_PER_MI).toFixed(1))
-        : hashPlan.rav.map((k) => +k.toFixed(1));
-    return vals.join(", ");
+    const imperial =
+      (hashPlan.units ?? savedPlan?.units ?? initialUnits()) === "imperial";
+    return fmtAidEntries(
+      hashPlan.rav.map((e) => ({
+        ...e,
+        pos: imperial ? e.pos / KM_PER_MI : e.pos,
+      })),
+    );
   });
 
   useEffect(() => {
@@ -672,12 +717,15 @@ function GpxUpload({
       tf: terrainFactor.toFixed(2),
       u: units,
     });
-    // Stations travel with the plan, canonically in metric km.
-    const aidNums = parseAidText(aidText);
-    if (aidNums.length) {
-      const kms =
-        units === "imperial" ? aidNums.map((v) => v * KM_PER_MI) : aidNums;
-      params.set("rav", kms.map((k) => +k.toFixed(1)).join(","));
+    // Stations travel with the plan, canonically in metric km; per-station
+    // dwell overrides ride along as "(min)" suffixes.
+    const aidEntries = parseAidText(aidText);
+    if (aidEntries.length) {
+      const metric = aidEntries.map((e) => ({
+        ...e,
+        pos: units === "imperial" ? e.pos * KM_PER_MI : e.pos,
+      }));
+      params.set("rav", fmtAidEntries(metric).replace(/\s/g, ""));
     }
     // Nutrition rates travel only when customized — links stay short.
     if (nutriRates.carbsGPerH !== DEFAULT_RATES.carbsGPerH)
@@ -700,11 +748,13 @@ function GpxUpload({
       .map((tk) => tk.trim())
       .filter(Boolean);
     if (
-      aidNums.length &&
+      aidEntries.length &&
       coTokens.length &&
       coTokens.every((tk) => /^\d{1,2}:[0-5]\d$/.test(tk))
     )
       params.set("co", coTokens.join(","));
+    if (raceDateText && /^\d{4}-\d{2}-\d{2}$/.test(raceDateText))
+      params.set("rd", raceDateText);
     const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -773,14 +823,18 @@ function GpxUpload({
     );
     setPaceText(fmtPace(converted));
     setLastValidPaceSec(converted);
-    // Aid-station positions follow too (they're typed in the active unit).
-    const aidNums = parseAidText(aidText);
-    if (aidNums.length) {
-      const conv =
-        next === "imperial"
-          ? aidNums.map((v) => v / KM_PER_MI)
-          : aidNums.map((v) => v * KM_PER_MI);
-      setAidText(conv.map((v) => +v.toFixed(1)).join(", "));
+    // Aid-station positions follow too (they're typed in the active unit);
+    // per-station dwell overrides are minutes, so they carry over unchanged.
+    const aidEntries = parseAidText(aidText);
+    if (aidEntries.length) {
+      setAidText(
+        fmtAidEntries(
+          aidEntries.map((e) => ({
+            ...e,
+            pos: next === "imperial" ? e.pos / KM_PER_MI : e.pos * KM_PER_MI,
+          })),
+        ),
+      );
     }
     trackEvent("switch-units", { to: next });
   }
@@ -800,6 +854,10 @@ function GpxUpload({
     units === "imperial"
       ? `${fmtPace(secPerKm * KM_PER_MI)}/mi`
       : `${fmtPace(secPerKm)}/km`;
+  const tempStr = (c: number) =>
+    units === "imperial"
+      ? `${Math.round((c * 9) / 5 + 32)} °F`
+      : `${Math.round(c)} °C`;
   const bucketMeters = units === "imperial" ? MILE_M : 1000;
   const bucketKm = bucketMeters / 1000;
 
@@ -1096,6 +1154,7 @@ function GpxUpload({
         sodiumMgPerH: nutriRates.sodiumMgPerH,
         caffeineMgPerH: nutriRates.caffeineMgPerH ?? 0,
         fadePctPerH,
+        raceDate: raceDateText,
       });
     }, 500);
     return () => clearTimeout(timer);
@@ -1115,7 +1174,46 @@ function GpxUpload({
     cutoffText,
     nutriRates,
     fadePctPerH,
+    raceDateText,
   ]);
+
+  // Race-day countdown: local date, not UTC (a plan is made in the runner's
+  // timezone; toISOString near midnight would be off by a day).
+  const now = new Date();
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const raceDaysOut = raceDateText ? daysUntil(raceDateText, todayISO) : null;
+  const raceInHorizon =
+    raceDaysOut !== null &&
+    raceDaysOut >= 0 &&
+    raceDaysOut <= FORECAST_HORIZON_DAYS;
+
+  // Fetch the race-day forecast once the date sits inside the horizon.
+  // Setting a date is the opt-in; only a rounded course midpoint is sent
+  // (see lib/weather.ts). Anything failing is a non-event for the plan.
+  useEffect(() => {
+    if (!track || !raceInHorizon) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when the date leaves the horizon; runs only on dep change
+      setWeather({ status: "idle", data: null });
+      return;
+    }
+    const mid = track.coords[Math.floor(track.coords.length / 2)];
+    if (!mid) return;
+    const ctrl = new AbortController();
+    let alive = true;
+    fetchRaceWeather(mid.lat, mid.lon, raceDateText, fetch, ctrl.signal).then(
+      (w) => {
+        if (!alive) return;
+        setWeather(
+          w ? { status: "ok", data: w } : { status: "error", data: null },
+        );
+        if (w) trackEvent("race-weather", { tmax: Math.round(w.tMaxC) });
+      },
+    );
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [track, raceDateText, raceInHorizon]);
 
   // "Forget": drop the saved plan and start clean on the example.
   function handleForgetSaved() {
@@ -1193,18 +1291,31 @@ function GpxUpload({
     }
     return null;
   };
-  const aidKms = useMemo(() => {
+  const aidEntries = useMemo(() => {
     const raw = parseAidText(aidText);
-    const kms = units === "imperial" ? raw.map((v) => v * KM_PER_MI) : raw;
     const total = track?.distanceKm ?? 0;
-    return [...new Set(kms.map((k) => +k.toFixed(2)))]
-      .filter((k) => k > 0 && k < total)
-      .sort((a, b) => a - b)
-      .slice(0, 30);
+    const seen = new Set<number>();
+    const list: { km: number; dwellMin?: number }[] = [];
+    for (const e of raw) {
+      const km = +(units === "imperial" ? e.pos * KM_PER_MI : e.pos).toFixed(2);
+      if (!(km > 0 && km < total) || seen.has(km)) continue;
+      seen.add(km);
+      list.push({ km, dwellMin: e.dwellMin });
+    }
+    return list.sort((a, b) => a.km - b.km).slice(0, 30);
   }, [aidText, units, track]);
-  const aidStops = aidKms
-    .map((km) => ({ km, eta: elapsedAtKm(km) }))
-    .filter((s): s is { km: number; eta: number } => s.eta !== null);
+  const aidKms = useMemo(() => aidEntries.map((e) => e.km), [aidEntries]);
+  const aidStops = aidEntries
+    .map((e) => ({
+      km: e.km,
+      eta: elapsedAtKm(e.km),
+      dwellSec:
+        e.dwellMin !== undefined ? Math.max(0, e.dwellMin) * 60 : undefined,
+    }))
+    .filter(
+      (s): s is { km: number; eta: number; dwellSec: number | undefined } =>
+        s.eta !== null,
+    );
   // Which 1-based table bucket holds each station, for the row badges.
   const aidByBucket = new Map<number, number[]>();
   aidKms.forEach((km, i) => {
@@ -1255,16 +1366,35 @@ function GpxUpload({
   // ADDED after the band, never multiplied). See lib/logistics.ts.
   const dwellSec = Math.max(0, dwellMin) * 60;
   const adjStops = adjustStops(aidStops, dwellSec);
-  const totalDwellSec = aidStops.length * dwellSec;
+  // Stations with their dwell resolved (override or default) — the shape
+  // every downstream dwellBefore call consumes.
+  const stations = useMemo(
+    () =>
+      aidEntries.map((e) => ({
+        km: e.km,
+        dwellSec:
+          e.dwellMin !== undefined ? Math.max(0, e.dwellMin) * 60 : dwellSec,
+      })),
+    [aidEntries, dwellSec],
+  );
+  const totalDwellSec = stations.reduce((sum, s) => sum + s.dwellSec, 0);
   const adjFinishSec = timeSec + totalDwellSec;
+  // A hot race-day forecast widens the SLOW end of the honest range (heat
+  // never makes you faster); the central estimate deliberately never moves.
+  // A forecast is a risk to plan around, not a measurement of you.
+  const heatPct =
+    weather.status === "ok" && weather.data
+      ? heatSlowdownPct(weather.data.tMaxC)
+      : 0;
+  const heatExtraSec = (timeSec * heatPct) / 100;
   const adjRange = {
     lowSec: range.lowSec + totalDwellSec,
-    highSec: range.highSec + totalDwellSec,
+    highSec: range.highSec + heatExtraSec + totalDwellSec,
   };
   // Elapsed at the END of a table row must include the dwell of a station
   // sitting exactly on the boundary — hence the epsilon past strict `<`.
   const rowElapsed = (movingSec: number, endKmMetric: number) =>
-    movingSec + dwellBefore(aidKms, endKmMetric + 1e-6, dwellSec);
+    movingSec + dwellBefore(stations, endKmMetric + 1e-6);
   const rowEndKms = splits.reduce<number[]>((arr, s) => {
     arr.push((arr.length ? arr[arr.length - 1] : 0) + s.distanceKm);
     return arr;
@@ -1294,7 +1424,7 @@ function GpxUpload({
       totalKm: track.distanceKm,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rowEndKms/rowAdjElapsed derive from exactly these deps
-  }, [comparePoints, track, splits, aidKms, dwellSec]);
+  }, [comparePoints, track, splits, stations]);
 
   // What a naive flat-pace calculator would promise on this course.
   const naiveSec = track ? enginePaceSecPerKm * track.distanceKm : 0;
@@ -1304,14 +1434,15 @@ function GpxUpload({
   const clockAt = (elapsed: number) =>
     startSec === null ? null : fmtWallClock(startSec, elapsed);
   // Cutoffs pair by index with the sorted stations; the range warning scales
-  // only the moving part of the arrival (see cutoffStatus).
-  const highRatio = timeSec > 0 ? range.highSec / timeSec : 1;
+  // only the moving part of the arrival (see cutoffStatus). Heat risk is part
+  // of the slow end, so a hot forecast can turn a cutoff amber.
+  const highRatio = timeSec > 0 ? (range.highSec + heatExtraSec) / timeSec : 1;
   const cutoffSecs = parseCutoffs(cutoffText).slice(0, adjStops.length);
   const stopStatus: CutoffStatus[] = adjStops.map((s, i) => {
     const cutoff = cutoffSecs[i];
     return cutoff == null
       ? "ok"
-      : cutoffStatus(s.arriveSec, i * dwellSec, highRatio, cutoff);
+      : cutoffStatus(s.arriveSec, dwellBefore(stations, s.km), highRatio, cutoff);
   });
   const cutoffWarnings = adjStops.flatMap((s, i) => {
     const cutoff = cutoffSecs[i];
@@ -1346,10 +1477,10 @@ function GpxUpload({
       }
       const moving =
         prevElapsed + Math.max(0, km - prevEnd) * splits[sIdx].paceSecPerKm;
-      arr[i] = moving + dwellBefore(aidKms, km + 1e-6, dwellSec);
+      arr[i] = moving + dwellBefore(stations, km + 1e-6);
     }
     return arr;
-  }, [track, splits, aidKms, dwellSec]);
+  }, [track, splits, stations]);
   const replayLabelAt = (idx: number, tSec: number) =>
     `${distStr((idx * 10) / 1000)} · ${fmtClockShort(tSec)}${clockAt(tSec) ? ` · ${clockAt(tSec)}` : ""}`;
   const replay = coordElapsed
@@ -1497,14 +1628,14 @@ function GpxUpload({
             t.aidLabel,
             unitShort,
             t.sheetEta,
-            ...(dwellSec > 0 ? [t.sheetDepart] : []),
+            ...(totalDwellSec > 0 ? [t.sheetDepart] : []),
             ...(anyCutoff ? [t.sheetCutoff] : []),
           ],
           rows: adjStops.map((s, i) => [
             `R${i + 1}`,
             (units === "imperial" ? s.km / KM_PER_MI : s.km).toFixed(1),
             `≈ ${fmtClockShort(s.arriveSec)}${withClock(s.arriveSec)}`,
-            ...(dwellSec > 0
+            ...(totalDwellSec > 0
               ? [`${fmtClockShort(s.departSec)}${withClock(s.departSec)}`]
               : []),
             ...(anyCutoff
@@ -1586,7 +1717,7 @@ function GpxUpload({
             const climbSec =
               (elapsedAtKm(c.toKm) ?? startMoving) - startMoving;
             const etaSec =
-              startMoving + dwellBefore(aidKms, c.fromKm + 1e-6, dwellSec);
+              startMoving + dwellBefore(stations, c.fromKm + 1e-6);
             const vam = climbSec > 0 ? (c.gainM * 3600) / climbSec : 0;
             return [
               `C${i + 1}  ·  ${(units === "imperial" ? c.fromKm / KM_PER_MI : c.fromKm).toFixed(1)}`,
@@ -2289,7 +2420,10 @@ function GpxUpload({
                 shows the PROJECTED arrival — the plan's real added value over
                 the roadbook's km marks. */}
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-zinc-800 pt-3 light:border-zinc-200">
-              <label className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500">
+              <label
+                className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500"
+                title={t.dwellHint}
+              >
                 <span className="uppercase tracking-wider">{t.aidLabel}</span>
                 <input
                   value={aidText}
@@ -2344,6 +2478,24 @@ function GpxUpload({
                   }`}
                 />
               </label>
+              {/* Optional race date: inside the forecast horizon it unlocks
+                  the race-day weather line (only a rounded course midpoint is
+                  ever sent — see lib/weather.ts). Empty = feature off. */}
+              <label
+                className="flex items-center gap-2 text-xs text-zinc-400 light:text-zinc-500"
+                title={t.raceDateHint}
+              >
+                <span className="uppercase tracking-wider">
+                  {t.raceDateLabel}
+                </span>
+                <input
+                  type="date"
+                  value={raceDateText}
+                  onChange={(e) => setRaceDateText(e.target.value)}
+                  aria-label={t.raceDateLabel}
+                  className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm tabular-nums text-zinc-100 transition-colors [color-scheme:dark] focus:border-emerald-500 focus:outline-none light:border-zinc-300 light:bg-white light:text-zinc-900 light:[color-scheme:light]"
+                />
+              </label>
               {!startValid && (
                 <span className="w-full text-xs text-rose-400 light:text-rose-600">
                   {t.startInvalid}
@@ -2353,7 +2505,7 @@ function GpxUpload({
                 <span
                   key={s.km}
                   title={
-                    dwellSec > 0
+                    s.dwellSec > 0
                       ? t.chipArrDep(
                           fmtClockShort(s.arriveSec),
                           fmtClockShort(s.departSec),
@@ -2377,6 +2529,14 @@ function GpxUpload({
                   · ≈ {fmtClockShort(s.arriveSec)}
                   {clockAt(s.arriveSec) && (
                     <span className="text-zinc-500"> · {clockAt(s.arriveSec)}</span>
+                  )}
+                  {/* A station running on its own stop time shows it, so an
+                      override is visible at a glance. */}
+                  {s.dwellSec !== dwellSec && (
+                    <span className="text-amber-400 light:text-amber-600">
+                      {" "}
+                      · {Math.round(s.dwellSec / 60)} min
+                    </span>
                   )}
                 </span>
               ))}
@@ -2512,6 +2672,35 @@ function GpxUpload({
             </div>
           </div>
           <p className="text-xs text-zinc-500">{t.rangeNote}</p>
+          {/* Race-day weather: forecast line inside the horizon, countdown
+              outside it. Heat widens only the slow end of the range above. */}
+          {raceDaysOut !== null && raceDaysOut >= 0 && (
+            <p className="text-xs text-zinc-500">
+              {!raceInHorizon ? (
+                t.weatherCountdown(raceDaysOut - FORECAST_HORIZON_DAYS)
+              ) : weather.status === "error" ? (
+                t.weatherError
+              ) : weather.status === "ok" && weather.data ? (
+                <>
+                  {t.weatherLine(
+                    `${tempStr(weather.data.tMinC)} – ${tempStr(weather.data.tMaxC)}`,
+                    weather.data.precipProbPct !== null
+                      ? `${weather.data.precipProbPct}%`
+                      : null,
+                  )}
+                  {heatPct > 0 && (
+                    <span className="text-amber-300 light:text-amber-700">
+                      {" "}
+                      {t.weatherHeat(
+                        fmtClockShort(heatExtraSec),
+                        `${fluidStr(heatFluidBumpMlPerH(weather.data.tMaxC))}/h`,
+                      )}
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </p>
+          )}
           {/* What a different flat pace buys on THIS course: the question
               every runner actually asks. Same dwell applies to all variants. */}
           {sensitivity.length > 0 && (
@@ -2635,8 +2824,7 @@ function GpxUpload({
                       const climbSec =
                         (elapsedAtKm(c.toKm) ?? startMoving) - startMoving;
                       const etaSec =
-                        startMoving +
-                        dwellBefore(aidKms, c.fromKm + 1e-6, dwellSec);
+                        startMoving + dwellBefore(stations, c.fromKm + 1e-6);
                       const vam =
                         climbSec > 0 ? (c.gainM * 3600) / climbSec : 0;
                       return (

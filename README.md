@@ -74,6 +74,12 @@ model is the foundation; the calibration layer is the product.
   </tr>
 </table>
 
+Race logistics are part of the plan: a stop time per aid station (with
+per-station overrides — `33(8)` means 8 minutes at that one), cutoff-barrier
+warnings, wall-clock ETAs from your start time, and, within 16 days of your
+race date, a race-day forecast that widens the slow end of the range when heat
+is coming and suggests a fluid bump.
+
 You can share a plan as an image, a link that carries your settings, a
 printable race-day PDF, or a watch-ready GPX whose waypoints carry your
 projected ETAs. The interface speaks English, French, Spanish, German, and
@@ -104,7 +110,7 @@ your actual *moving* time → a measured terrain factor, applied with one click.
 npm install
 npm run dev      # local dev server
 npm run build    # production build (also what CI runs)
-npm run test     # engine + app tests (Vitest, 145 tests)
+npm run test     # engine + app tests (Vitest, 158 tests)
 npm run lint
 ```
 
@@ -133,8 +139,10 @@ src/
                        endpoint race, client-side route-corridor filter.
   lib/nutrition.ts     Nutrition plan: hourly carb/fluid/sodium targets applied
                        to each projected segment between aid stations.
-  lib/logistics.ts     Race logistics: aid-station dwell time, wall-clock
-                       ETAs from a start time, cutoff-barrier warnings.
+  lib/logistics.ts     Race logistics: aid-station dwell time (per-station
+                       overrides), wall-clock ETAs, cutoff-barrier warnings.
+  lib/weather.ts       Race-day forecast (Open-Meteo) + heat adjustments:
+                       slow-end range widening and a fluid-bump suggestion.
   lib/persistence.ts   Local save/restore of the last uploaded plan.
   lib/planSheet.ts     Printable race-day plan sheet (stats, profile, aid ETAs,
                        nutrition, full pacing table) for the PDF export.

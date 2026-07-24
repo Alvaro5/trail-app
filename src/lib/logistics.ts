@@ -11,52 +11,53 @@ export type AdjustedStop = {
   km: number;
   arriveSec: number; // dwell-adjusted arrival (dwell of EARLIER stations only)
   departSec: number; // arrival + this station's own dwell
+  dwellSec: number; // this station's own dwell (override or default)
 };
 
+// A station with its own dwell already resolved (override or default) — the
+// shape every helper below consumes, so per-station overrides thread through
+// arrivals, cutoffs, splits and the replay identically.
+export type Station = { km: number; dwellSec: number };
+
 // Stops in course order with dwell from every earlier station folded into
-// each arrival. Input may be unsorted; eta is MOVING elapsed seconds.
+// each arrival. Input may be unsorted; eta is MOVING elapsed seconds. A stop
+// without its own dwellSec uses the default.
 export function adjustStops(
-  stops: { km: number; eta: number }[],
+  stops: { km: number; eta: number; dwellSec?: number }[],
   dwellSec: number,
 ): AdjustedStop[] {
+  let before = 0;
   return [...stops]
     .sort((a, b) => a.km - b.km)
-    .map((s, i) => ({
-      km: s.km,
-      arriveSec: s.eta + i * dwellSec,
-      departSec: s.eta + (i + 1) * dwellSec,
-    }));
+    .map((s) => {
+      const own = s.dwellSec ?? dwellSec;
+      const arriveSec = s.eta + before;
+      before += own;
+      return { km: s.km, arriveSec, departSec: arriveSec + own, dwellSec: own };
+    });
 }
 
 // Total dwell accumulated STRICTLY before a course km: arriving AT a station
 // hasn't spent that station's dwell yet.
-export function dwellBefore(
-  aidKms: number[],
-  km: number,
-  dwellSec: number,
-): number {
-  let n = 0;
-  for (const a of aidKms) if (a < km) n++;
-  return n * dwellSec;
+export function dwellBefore(stations: Station[], km: number): number {
+  let sum = 0;
+  for (const s of stations) if (s.km < km) sum += s.dwellSec;
+  return sum;
 }
 
 export function adjustedElapsedAt(
   movingSec: number | null,
   km: number,
-  aidKms: number[],
-  dwellSec: number,
+  stations: Station[],
 ): number | null {
-  return movingSec === null
-    ? null
-    : movingSec + dwellBefore(aidKms, km, dwellSec);
+  return movingSec === null ? null : movingSec + dwellBefore(stations, km);
 }
 
 export function adjustedFinishSec(
   movingFinishSec: number,
-  nStations: number,
-  dwellSec: number,
+  totalDwellSec: number,
 ): number {
-  return movingFinishSec + nStations * dwellSec;
+  return movingFinishSec + totalDwellSec;
 }
 
 // "H:MM" / "HH:MM", 24-hour → seconds since midnight, or null.

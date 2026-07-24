@@ -790,19 +790,48 @@
   effects and their timers). Proven order-independent with two shuffled
   runs. Environment-dependent test bugs die at the root, not by re-running.
 
+- **Backlog round (owner: "keep going"): per-station dwell overrides +
+  race-day weather.**
+  - *Per-station dwell overrides.* The stations field now accepts a stop time
+    per station: "17, 33(8), 47" = 8 min at R2, default elsewhere (clamped to
+    60; "(0)" = no-stop). `adjustStops` takes an optional per-stop dwell;
+    `dwellBefore`/`adjustedElapsedAt` consume `{km, dwellSec}[]` stations, so
+    overrides thread identically through arrivals, cutoff warnings (the dwell
+    part of a slow arrival is the per-station SUM, still never scaled by the
+    range ratio), splits elapsed, nutrition legs, the replay timeline, the
+    PDF depart column (shown when TOTAL dwell > 0) and the watch GPX. The
+    override rides in the aid text itself, so persistence is free; the hash
+    `rav` carries it as "17,33(8),47" (metric-canonical positions, unit-free
+    minutes); the unit toggle converts positions and preserves suffixes. The
+    R-chip shows an amber "· 8 min" when a station differs from the default.
+    Live-verified: typing "20(10)" at dwell 0 shifts the finish exactly
+    +10:00; R3's ETA accumulates 3+8 min.
+  - *Race-day weather (was parked as race-week; built now so it self-arms).*
+    New pure `src/lib/weather.ts` (+10 tests): `daysUntil`, `heatSlowdownPct`
+    (0.6%/°C above 16 °C air max, capped 12% — Ely 2007 / El Helou 2012
+    ballpark), `heatFluidBumpMlPerH` (+25 ml/h per °C above 18, cap 250),
+    `fetchRaceWeather` (Open-Meteo daily, keyless). A race-date field sits
+    with the logistics inputs; within the 16-day horizon the day's forecast
+    is fetched for the course MIDPOINT ROUNDED to 0.01° (never the track —
+    setting the date is the opt-in, hint says so), rendered as one line
+    ("Race-day forecast: 14 – 27 °C, rain 20%"), and heat EXTENDS ONLY THE
+    SLOW END of the range (central estimate never moves; a forecast is a
+    risk, not a measurement) plus feeds the cutoff slow-arrival ratio.
+    Beyond the horizon: a countdown line, and NO network call (verified).
+    Date travels in the hash (`rd`) and the saved plan. Out-of-horizon
+    default means e2e (external hosts blocked) is untouched. Live-verified
+    against real Open-Meteo: Fontainebleau 2026-08-01 came back 24–37 °C,
+    heat line "+0:56" = exactly the 12% cap on the moving estimate.
+  - 158 unit tests + 5 e2e. Skipped again on re-triage: caffeine back-half
+    weighting, fullscreen-map hover sync (unchanged reasoning).
+
 ## Next
 - **Owner-gated** (explicitly deferred, do not start without a decision):
-  fatigue-fade model (needs a second calibration point; never fit terrain +
-  fatigue against one finish time); recency/similarity weighting for
-  multi-run calibration (domain logic the owner wants to review deliberately);
   mobile real-device pass; custom domain.
 - Optional elevation polish (only if it earns its keep): expose
   `D_PLUS_THRESHOLD_M` / `SMOOTH_WINDOW_M` as UI controls; or a Savitzky-Golay
   smoother (preserves climb peaks better than a box MA, harder to explain).
-- Race-week feature parked by triage: weather-aware range + fluid bump
-  (Open-Meteo, keyless + CORS; only meaningful within ~14 days of the race).
-- Ideas parked: per-station dwell overrides; caffeine back-half weighting;
-  fullscreen-map hover sync.
+- Ideas parked: caffeine back-half weighting; fullscreen-map hover sync.
 
 - **Final autonomy hour (owner: "anything more?").**
   - *Watch GPX export* (`src/lib/planGpx.ts`, +4 tests): the course as a

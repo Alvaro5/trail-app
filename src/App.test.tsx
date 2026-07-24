@@ -244,6 +244,19 @@ describe("App smoke test", () => {
     const b = finishOf(withDwell);
     expect(a).not.toBeNull();
     expect(b! - a!).toBe(360);
+
+    // Per-station override: "2(6)" spends 6 min at R2 while R1 keeps the
+    // default (here 0), so the finish shifts by exactly the override.
+    const withOverride = await renderWithHash("#rav=1,2(6)&dw=0");
+    expect(finishOf(withOverride)! - a!).toBe(360);
+    // The override survives the hash → text round-trip (positions render in
+    // the active unit — miles under the en-US test locale — but the "(min)"
+    // suffix is unit-free and must be preserved).
+    expect(
+      withOverride.querySelector<HTMLInputElement>(
+        'input[aria-label="Aid stations"]',
+      )?.value,
+    ).toMatch(/\(6\)$/);
   });
 
   it("renders the nutrition card with legs from the aid stations", async () => {
